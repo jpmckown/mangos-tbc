@@ -191,7 +191,7 @@ const char logonProofVersionInvalid[2] = { CMD_AUTH_LOGON_PROOF, AUTH_LOGON_FAIL
 const char logonProofUnknownAccountPinInvalid[4] = { CMD_AUTH_LOGON_PROOF, AUTH_LOGON_FAILED_UNKNOWN_ACCOUNT, 3, 0 };
 
 /// Constructor - set the N and g values for SRP6
-AuthSocket::AuthSocket(boost::asio::io_service& service)
+AuthSocket::AuthSocket(boost::asio::io_context& service)
     : AsyncSocket<AuthSocket>(service), _status(STATUS_CHALLENGE), _build(0), _accountSecurityLevel(SEC_PLAYER), m_timeoutTimer(service)
 {
 }

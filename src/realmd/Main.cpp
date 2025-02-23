@@ -73,7 +73,7 @@ bool restart = false;
 
 DatabaseType LoginDatabase;                                 // Accessor to the realm server database
 
-boost::asio::io_service service;
+boost::asio::io_context service;
 
 // Launch the realm server
 int main(int argc, char* argv[])

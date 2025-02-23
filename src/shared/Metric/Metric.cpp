@@ -109,8 +109,8 @@ void metric::metric::initialize()
     };
 
     m_sendTimer.reset(new boost::asio::deadline_timer(m_writeService));
-    m_queueServiceWork.reset(new boost::asio::io_service::work(m_queueService));
-    m_writeServiceWork.reset(new boost::asio::io_service::work(m_writeService));
+    m_queueServiceWork.reset(new boost::asio::io_context::work(m_queueService));
+    m_writeServiceWork.reset(new boost::asio::io_context::work(m_writeService));
 
     // Start up service thread that will process all queued tasks
     m_queueServiceThread = std::thread([&] {
