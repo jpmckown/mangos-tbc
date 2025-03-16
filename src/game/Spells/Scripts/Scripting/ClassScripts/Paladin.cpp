@@ -25,14 +25,14 @@ struct SealOfTheCrusader : public AuraScript
 {
     void OnApply(Aura* aura, bool apply) const override
     {
-        if (aura->GetEffIndex() == EFFECT_INDEX_1)
-        {
-            // Seal of the Crusader damage reduction
-            // SotC increases attack speed but reduces damage to maintain the same DPS
-            float reduction = (-100.0f * aura->GetModifier()->m_amount) / (aura->GetModifier()->m_amount + 100.0f);
-            aura->GetTarget()->HandleStatModifier(UNIT_MOD_DAMAGE_MAINHAND, TOTAL_PCT, reduction, apply);
-            return;
-        }
+        // if (aura->GetEffIndex() == EFFECT_INDEX_1)
+        // {
+        //     // Seal of the Crusader damage reduction
+        //     // SotC increases attack speed but reduces damage to maintain the same DPS
+        //     float reduction = (-100.0f * aura->GetModifier()->m_amount) / (aura->GetModifier()->m_amount + 100.0f);
+        //     aura->GetTarget()->HandleStatModifier(UNIT_MOD_DAMAGE_MAINHAND, TOTAL_PCT, reduction, apply);
+        //     return;
+        // }
 
         if (aura->GetEffIndex() == EFFECT_INDEX_2)
         {
@@ -46,6 +46,25 @@ struct SealOfTheCrusader : public AuraScript
         totalMod *= 1.4f; // Patch 2.4.2 - Increases damage of Crusader Strike by 40%
     }
 };
+
+// 31801 - Seal of Vengeance
+struct SealOfVengeance : public AuraScript
+{
+    void OnApply(Aura* aura, bool apply) const override
+    {
+        if (aura->GetEffIndex() == EFFECT_INDEX_1)
+        {
+            aura->GetTarget()->RegisterScriptedLocationAura(aura, SCRIPT_LOCATION_MELEE_DAMAGE_DONE, apply);
+            return;
+        }
+    }
+
+    void OnDamageCalculate(Aura* /*aura*/, Unit* /*attacker*/, Unit* /*victim*/, int32& /*advertisedBenefit*/, float& totalMod) const override
+    {
+        totalMod *= 1.4f; // Patch 2.4.2 - Increases damage of Crusader Strike by 40%
+    }
+};
+
 
 // 5373 - Judgement of Light Intermediate
 struct JudgementOfLightIntermediate : public SpellScript
@@ -297,4 +316,5 @@ void LoadPaladinScripts()
     RegisterSpellScript<PaladinTier6Trinket>("spell_paladin_tier_6_trinket");
     RegisterSpellScript<BlessingOfLight>("spell_blessing_of_light");
     RegisterSpellScript<JudgementOfCommand>("spell_judgement_of_command");
+    RegisterSpellScript<SealOfVengeance>("spell_seal_of_vengeance");
 }

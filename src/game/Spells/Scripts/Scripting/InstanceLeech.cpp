@@ -10,6 +10,7 @@ std::array<uint32, 1> INSTANCE_HEALING_AURAS = { 55000 };
 
 struct InstanceLeechOnDamageHealing : public UnitScript {
     void OnDealDamage(Unit* attacker, Unit* victim, uint32 damage) const override {
+        if (attacker == nullptr) return; 
         bool isPet = attacker->GetOwner() && attacker->GetOwner()->GetTypeId() == TYPEID_PLAYER;
         if (!isPet && attacker->GetTypeId() != TYPEID_PLAYER) return;
 

@@ -403,8 +403,8 @@ void Unit::ProcSkillsAndReactives(bool isVictim, Unit* target, uint32 procFlags,
             }
             else // For attacker
             {
-                // Overpower on victim dodge
-                if (procEx & PROC_EX_DODGE && getClass() == CLASS_WARRIOR)
+                // Overpower on victim dodge, block, or parry
+                if (((procEx & PROC_EX_DODGE) || (procEx & PROC_EX_PARRY) || (procEx & PROC_EX_BLOCK)) && getClass() == CLASS_WARRIOR)
                 {
                     AddComboPoints(target, 1);
                     StartReactiveTimer(REACTIVE_OVERPOWER);
