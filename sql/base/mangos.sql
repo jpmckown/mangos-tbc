@@ -23,7 +23,7 @@ DROP TABLE IF EXISTS `db_version`;
 CREATE TABLE `db_version` (
   `version` varchar(120) DEFAULT NULL,
   `creature_ai_version` varchar(120) DEFAULT NULL,
-  `required_s2482_01_mangos_spawn_zone` bit(1) DEFAULT NULL
+  `required_s2483_01_mangos_spell_groups` bit(1) DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 ROW_FORMAT=DYNAMIC COMMENT='Used DB version notes';
 
 --
@@ -16361,6 +16361,21 @@ INSERT INTO `spell_elixir` VALUES
 (46839,0xB);
 /*!40000 ALTER TABLE `spell_elixir` ENABLE KEYS */;
 UNLOCK TABLES;
+
+DROP TABLE IF EXISTS `spell_group`;
+CREATE TABLE `spell_group`(
+  `Id` mediumint unsigned NOT NULL DEFAULT '0' COMMENT 'Spell Group Identifier',
+  `Rule` smallint unsigned NOT NULL,
+  `Name` varchar(200) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci NOT NULL COMMENT 'Description of usage',
+  PRIMARY KEY(`Id`)
+);
+
+DROP TABLE IF EXISTS `spell_group_spell`;
+CREATE TABLE `spell_group_spell`(
+  `Id` mediumint unsigned NOT NULL DEFAULT '0' COMMENT 'Identifier',
+  `SpellId` int unsigned NOT NULL,
+  PRIMARY KEY(`Id`,`SpellId`)
+);
 
 --
 -- Table structure for table `spell_learn_spell`
