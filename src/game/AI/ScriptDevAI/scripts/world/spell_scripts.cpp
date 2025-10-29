@@ -54,95 +54,33 @@ enum
     GO_RED_SNAPPER              = 181616,
     NPC_ANGRY_MURLOC            = 17102,
     ITEM_RED_SNAPPER            = 23614,
+    SPELL_FISHED_UP_MURLOC      = 29869,
+    SPELL_FISHED_UP_RED_SNAPPER = 29867,
     // SPELL_SUMMON_TEST           = 49214                  // ! Just wrong spell name? It summon correct creature (17102)but does not appear to be used.
 };
 
-bool EffectDummyGameObj_spell_dummy_go(Unit* pCaster, uint32 uiSpellId, SpellEffectIndex uiEffIndex, GameObject* pGOTarget, ObjectGuid /*originalCasterGuid*/)
+// 29866 - Cast Fishing Net
+struct CastFishingNet : public SpellScript
 {
-    switch (uiSpellId)
+    void OnEffectExecute(Spell* spell, SpellEffectIndex effIdx) const override
     {
-        case SPELL_CAST_FISHING_NET:
-        {
-            if (uiEffIndex == EFFECT_INDEX_0)
-            {
-                if (pGOTarget->GetRespawnTime() != 0 || pGOTarget->GetEntry() != GO_RED_SNAPPER || pCaster->GetTypeId() != TYPEID_PLAYER)
-                    return true;
+        if (effIdx != EFFECT_INDEX_0)
+            return;
 
-                if (urand(0, 2))
-                {
-                    if (Creature* pMurloc = pCaster->SummonCreature(NPC_ANGRY_MURLOC, pCaster->GetPositionX(), pCaster->GetPositionY() + 20.0f, pCaster->GetPositionZ(), 0.0f, TEMPSPAWN_TIMED_OOC_DESPAWN, 10000))
-                        pMurloc->AI()->AttackStart(pCaster);
-                }
-                else
-                {
-                    if (Item* pItem = ((Player*)pCaster)->StoreNewItemInInventorySlot(ITEM_RED_SNAPPER, 1))
-                        ((Player*)pCaster)->SendNewItem(pItem, 1, true, false);
-                }
+        GameObject* goTarget = spell->GetGOTarget();
+        Unit* caster = spell->GetCaster();
+        if (goTarget->GetRespawnTime() != 0 || !caster->IsPlayer())
+            return;
 
-                pGOTarget->SetLootState(GO_JUST_DEACTIVATED);
-                return true;
-            }
-            return true;
-        }
+        if (urand(0, 2))
+            caster->CastSpell(nullptr, SPELL_FISHED_UP_MURLOC, TRIGGERED_OLD_TRIGGERED);
+        else
+            caster->CastSpell(nullptr, SPELL_FISHED_UP_RED_SNAPPER, TRIGGERED_OLD_TRIGGERED);
     }
-
-    return false;
-}
+};
 
 enum
 {
-    // quest 9629
-    SPELL_TAG_MURLOC                    = 30877,
-    SPELL_TAG_MURLOC_PROC               = 30875,
-    NPC_BLACKSILT_MURLOC                = 17326,
-    NPC_TAGGED_MURLOC                   = 17654,
-
-    // quest 9447
-    SPELL_HEALING_SALVE                 = 29314,
-    SPELL_HEALING_SALVE_DUMMY           = 29319,
-    NPC_MAGHAR_GRUNT                    = 16846,
-
-    // quest 10190
-    SPELL_RECHARGING_BATTERY            = 34219,
-    NPC_DRAINED_PHASE_HUNTER            = 19595,
-
-    // target hulking helboar
-    SPELL_ADMINISTER_ANTIDOTE           = 34665,
-    NPC_HELBOAR                         = 16880,
-    NPC_DREADTUSK                       = 16992,
-
-    // quest 11515
-    SPELL_FEL_SIPHON_DUMMY              = 44936,
-    NPC_FELBLOOD_INITIATE               = 24918,
-    NPC_EMACIATED_FELBLOOD              = 24955,
-
-    // target nestlewood owlkin
-    SPELL_INOCULATE_OWLKIN              = 29528,
-    NPC_OWLKIN                          = 16518,
-    NPC_OWLKIN_INOC                     = 16534,
-
-    // Quest "Disrupt the Greengill Coast" (11541)
-    SPELL_ORB_OF_MURLOC_CONTROL         = 45109,
-    SPELL_GREENGILL_SLAVE_FREED         = 45110,
-    SPELL_ENRAGE                        = 45111,
-    NPC_FREED_GREENGILL_SLAVE           = 25085,
-    NPC_DARKSPINE_MYRMIDON              = 25060,
-    NPC_DARKSPINE_SIREN                 = 25073,
-
-    // quest 9849, item 24501
-    SPELL_THROW_GORDAWG_BOULDER         = 32001,
-    NPC_MINION_OF_GUROK                 = 18181,
-
-    // npcs that are only interactable while dead
-    SPELL_SHROUD_OF_DEATH               = 10848,
-    SPELL_SPIRIT_PARTICLES              = 17327,
-    NPC_FRANCLORN_FORGEWRIGHT           = 8888,
-    NPC_GAERIYAN                        = 9299,
-
-    //  for quest 10584
-    SPELL_PROTOVOLTAIC_MAGNETO_COLLECTOR = 37136,
-    NPC_ENCASED_ELECTROMENTAL           = 21731,
-
     // quest 6661
     SPELL_MELODIOUS_RAPTURE             = 21050,
     SPELL_MELODIOUS_RAPTURE_VISUAL      = 21051,
@@ -150,231 +88,32 @@ enum
     NPC_ENTHRALLED_DEEPRUN_RAT          = 13017,
 };
 
-bool EffectAuraDummy_spell_aura_dummy_npc(const Aura* pAura, bool bApply)
+// 21050 - Melodious Rapture
+struct MelodiousRapture : public SpellScript
 {
-    switch (pAura->GetId())
+    SpellCastResult OnCheckCast(Spell* spell, bool /*strict*/) const override
     {
-        case SPELL_HEALING_SALVE:
-        {
-            if (pAura->GetEffIndex() != EFFECT_INDEX_0)
-                return true;
+        Unit* target = spell->m_targets.getUnitTarget();
+        if (!target || target->GetEntry() != NPC_DEEPRUN_RAT)
+            return SPELL_FAILED_BAD_TARGETS;
 
-            if (bApply)
-            {
-                if (Unit* pCaster = pAura->GetCaster())
-                    pCaster->CastSpell(pAura->GetTarget(), SPELL_HEALING_SALVE_DUMMY, TRIGGERED_OLD_TRIGGERED);
-            }
-
-            return true;
-        }
-        case SPELL_HEALING_SALVE_DUMMY:
-        {
-            if (pAura->GetEffIndex() != EFFECT_INDEX_0)
-                return true;
-
-            if (!bApply)
-            {
-                Creature* pCreature = (Creature*)pAura->GetTarget();
-
-                pCreature->UpdateEntry(NPC_MAGHAR_GRUNT);
-
-                if (pCreature->getStandState() == UNIT_STAND_STATE_KNEEL)
-                    pCreature->SetStandState(UNIT_STAND_STATE_STAND);
-
-                pCreature->ForcedDespawn(60 * IN_MILLISECONDS);
-            }
-
-            return true;
-        }
-        case SPELL_RECHARGING_BATTERY:
-        {
-            if (pAura->GetEffIndex() != EFFECT_INDEX_0)
-                return true;
-
-            if (!bApply)
-            {
-                if (pAura->GetTarget()->HasAuraState(AURA_STATE_HEALTHLESS_35_PERCENT))
-                    ((Creature*)pAura->GetTarget())->UpdateEntry(NPC_DRAINED_PHASE_HUNTER);
-            }
-
-            return true;
-        }
-        case SPELL_TAG_MURLOC:
-        {
-            Creature* pCreature = (Creature*)pAura->GetTarget();
-
-            if (pAura->GetEffIndex() != EFFECT_INDEX_0)
-                return true;
-
-            if (bApply)
-            {
-                if (pCreature->GetEntry() == NPC_BLACKSILT_MURLOC)
-                {
-                    if (Unit* pCaster = pAura->GetCaster())
-                        pCaster->CastSpell(pCreature, SPELL_TAG_MURLOC_PROC, TRIGGERED_OLD_TRIGGERED);
-                }
-            }
-            else
-            {
-                if (pCreature->GetEntry() == NPC_TAGGED_MURLOC)
-                    pCreature->ForcedDespawn();
-            }
-
-            return true;
-        }
-        case SPELL_ENRAGE:
-        {
-            if (!bApply || pAura->GetTarget()->GetTypeId() != TYPEID_UNIT)
-                return false;
-
-            Creature* pTarget = (Creature*)pAura->GetTarget();
-
-            if (Creature* pCreature = GetClosestCreatureWithEntry(pTarget, NPC_DARKSPINE_MYRMIDON, 50.0f))
-            {
-                pTarget->AI()->AttackStart(pCreature);
-                return true;
-            }
-
-            if (Creature* pCreature = GetClosestCreatureWithEntry(pTarget, NPC_DARKSPINE_SIREN, 50.0f))
-            {
-                pTarget->AI()->AttackStart(pCreature);
-                return true;
-            }
-
-            return false;
-        }
-        case SPELL_SHROUD_OF_DEATH:
-        case SPELL_SPIRIT_PARTICLES:
-        {
-            Creature* pCreature = (Creature*)pAura->GetTarget();
-
-            if (!pCreature || (pCreature->GetEntry() != NPC_FRANCLORN_FORGEWRIGHT && pCreature->GetEntry() != NPC_GAERIYAN))
-                return false;
-
-            if (bApply)
-                pCreature->m_AuraFlags |= UNIT_AURAFLAG_ALIVE_INVISIBLE;
-            else
-                pCreature->m_AuraFlags &= ~UNIT_AURAFLAG_ALIVE_INVISIBLE;
-
-            return false;
-        }
-        case SPELL_PROTOVOLTAIC_MAGNETO_COLLECTOR:
-        {
-            if (pAura->GetEffIndex() != EFFECT_INDEX_0)
-                return true;
-
-            Unit* pTarget = pAura->GetTarget();
-            if (bApply && pTarget->GetTypeId() == TYPEID_UNIT)
-                ((Creature*)pTarget)->UpdateEntry(NPC_ENCASED_ELECTROMENTAL);
-            return true;
-        }
+        return SPELL_CAST_OK;
     }
 
-    return false;
-}
-
-bool EffectDummyCreature_spell_dummy_npc(Unit* pCaster, uint32 uiSpellId, SpellEffectIndex uiEffIndex, Creature* pCreatureTarget, ObjectGuid /*originalCasterGuid*/)
-{
-    switch (uiSpellId)
+    void OnEffectExecute(Spell* spell, SpellEffectIndex /*effIdx*/) const override
     {
-        case SPELL_ADMINISTER_ANTIDOTE:
-        {
-            if (uiEffIndex == EFFECT_INDEX_0)
-            {
-                if (pCreatureTarget->GetEntry() != NPC_HELBOAR)
-                    return true;
+        Unit* caster = spell->GetCaster();
+        Unit* target = spell->GetUnitTarget();
+        if (caster->IsPlayer())
+            return;
 
-                // possible needs check for quest state, to not have any effect when quest really complete
+        static_cast<Creature*>(target)->UpdateEntry(NPC_ENTHRALLED_DEEPRUN_RAT);
+        target->CastSpell(nullptr, SPELL_MELODIOUS_RAPTURE_VISUAL, TRIGGERED_NONE);
+        target->GetMotionMaster()->MoveFollow(caster, frand(0.5f, 3.0f), frand(M_PI_F * 0.8f, M_PI_F * 1.2f));
 
-                pCreatureTarget->UpdateEntry(NPC_DREADTUSK);
-                return true;
-            }
-            return true;
-        }
-        case SPELL_INOCULATE_OWLKIN:
-        {
-            if (uiEffIndex == EFFECT_INDEX_0)
-            {
-                if (pCreatureTarget->GetEntry() != NPC_OWLKIN)
-                    return true;
-
-                pCreatureTarget->UpdateEntry(NPC_OWLKIN_INOC);
-                pCreatureTarget->AIM_Initialize();
-                ((Player*)pCaster)->KilledMonsterCredit(NPC_OWLKIN_INOC);
-
-                // set despawn timer, since we want to remove creature after a short time
-                pCreatureTarget->ForcedDespawn(15000);
-
-                return true;
-            }
-            return true;
-        }
-        case SPELL_FEL_SIPHON_DUMMY:
-        {
-            if (uiEffIndex == EFFECT_INDEX_0)
-            {
-                if (pCreatureTarget->GetEntry() != NPC_FELBLOOD_INITIATE)
-                    return true;
-
-                pCreatureTarget->UpdateEntry(NPC_EMACIATED_FELBLOOD);
-                return true;
-            }
-            return true;
-        }
-        case SPELL_TAG_MURLOC_PROC:
-        {
-            if (uiEffIndex == EFFECT_INDEX_0)
-            {
-                if (pCreatureTarget->GetEntry() == NPC_BLACKSILT_MURLOC)
-                    pCreatureTarget->UpdateEntry(NPC_TAGGED_MURLOC);
-            }
-            return true;
-        }
-        case SPELL_ORB_OF_MURLOC_CONTROL:
-        {
-            pCreatureTarget->CastSpell(pCaster, SPELL_GREENGILL_SLAVE_FREED, TRIGGERED_OLD_TRIGGERED);
-
-            // Freed Greengill Slave
-            pCreatureTarget->UpdateEntry(NPC_FREED_GREENGILL_SLAVE);
-
-            pCreatureTarget->CastSpell(pCreatureTarget, SPELL_ENRAGE, TRIGGERED_OLD_TRIGGERED);
-
-            return true;
-        }
-        case SPELL_THROW_GORDAWG_BOULDER:
-        {
-            if (uiEffIndex == EFFECT_INDEX_0)
-            {
-                for (int i = 0; i < 3; ++i)
-                {
-                    if (irand(i, 2))                        // 2-3 summons
-                        pCreatureTarget->SummonCreature(NPC_MINION_OF_GUROK, 0.0f, 0.0f, 0.0f, 0.0f, TEMPSPAWN_CORPSE_DESPAWN, 5000);
-                }
-
-                pCreatureTarget->CastSpell(nullptr, 3617, TRIGGERED_OLD_TRIGGERED); // suicide spell
-                return true;
-            }
-            return true;
-        }
-        case SPELL_MELODIOUS_RAPTURE:
-        {
-            if (uiEffIndex == EFFECT_INDEX_0)
-            {
-                if (pCaster->GetTypeId() != TYPEID_PLAYER && pCreatureTarget->GetEntry() != NPC_DEEPRUN_RAT)
-                    return true;
-
-                pCreatureTarget->UpdateEntry(NPC_ENTHRALLED_DEEPRUN_RAT);
-                pCreatureTarget->CastSpell(pCreatureTarget, SPELL_MELODIOUS_RAPTURE_VISUAL, TRIGGERED_NONE);
-                pCreatureTarget->GetMotionMaster()->MoveFollow(pCaster, frand(0.5f, 3.0f), frand(M_PI_F * 0.8f, M_PI_F * 1.2f));
-
-                ((Player*)pCaster)->KilledMonsterCredit(NPC_ENTHRALLED_DEEPRUN_RAT);
-            }
-            return true;
-        }
+        static_cast<Player*>(caster)->KilledMonsterCredit(NPC_ENTHRALLED_DEEPRUN_RAT);
     }
-
-    return false;
-}
+};
 
 struct GreaterInvisibilityMob : public AuraScript
 {
@@ -1189,19 +928,56 @@ struct IllusionPassive : public AuraScript
     }
 };
 
+// 25680, 27628 - Random Aggro
+struct RandomAggro : public SpellScript
+{
+    void OnEffectExecute(Spell* spell, SpellEffectIndex /*effIdx*/) const override
+    {
+        // 27628 - unknown if it should cause some high threat
+        Unit* caster = spell->GetCaster();
+        spell->GetCaster()->AddThreat(spell->GetUnitTarget());
+    }
+};
+
+// 22913 - Random Aggro 
+struct RandomAggro1000000 : public SpellScript
+{
+    void OnCast(Spell* spell) const override
+    {
+        Spell::TargetList const& list = spell->GetTargetList();
+        if (!list.empty())
+        {
+            auto itr = list.begin();
+            std::advance(itr, urand(0, list.size() - 1));
+            Unit* target = spell->GetCaster()->GetMap()->GetPlayer((*itr).targetGUID);
+            if (target)
+                spell->GetCaster()->AddThreat(target, 1000000.f);
+        }
+    }
+
+    void OnEffectExecute(Spell* spell, SpellEffectIndex /*effIdx*/) const override
+    {
+        Unit* caster = spell->GetCaster();
+        spell->GetCaster()->AddThreat(spell->GetUnitTarget());
+    }
+};
+
+// 10848, 27978, 40131 - Shroud of Death
+struct InvisibleForAlive : public AuraScript
+{
+    void OnApply(Aura* aura, bool apply) const override
+    {
+        if (apply)
+            aura->GetTarget()->m_AuraFlags |= UNIT_AURAFLAG_ALIVE_INVISIBLE;
+        else
+            aura->GetTarget()->m_AuraFlags &= ~UNIT_AURAFLAG_ALIVE_INVISIBLE;
+    }
+};
+
 void AddSC_spell_scripts()
 {
-    Script* pNewScript = new Script;
-    pNewScript->Name = "spell_dummy_go";
-    pNewScript->pEffectDummyGO = &EffectDummyGameObj_spell_dummy_go;
-    pNewScript->RegisterSelf();
-
-    pNewScript = new Script;
-    pNewScript->Name = "spell_dummy_npc";
-    pNewScript->pEffectDummyNPC = &EffectDummyCreature_spell_dummy_npc;
-    pNewScript->pEffectAuraDummy = &EffectAuraDummy_spell_aura_dummy_npc;
-    pNewScript->RegisterSelf();
-
+    RegisterSpellScript<CastFishingNet>("spell_cast_fishing_net");
+    RegisterSpellScript<MelodiousRapture>("spell_melodious_rapture");
     RegisterSpellScript<GreaterInvisibilityMob>("spell_greater_invisibility_mob");
     RegisterSpellScript<InebriateRemoval>("spell_inebriate_removal");
     RegisterSpellScript<AstralBite>("spell_astral_bite");
@@ -1246,4 +1022,7 @@ void AddSC_spell_scripts()
     RegisterSpellScript<Submerged>("spell_submerged");
     RegisterSpellScript<Stand>("spell_stand");
     RegisterSpellScript<IllusionPassive>("spell_illusion_passive");
+    RegisterSpellScript<RandomAggro>("spell_random_aggro");
+    RegisterSpellScript<RandomAggro1000000>("spell_random_aggro_1000000");
+    RegisterSpellScript<InvisibleForAlive>("spell_shroud_of_death");
 }

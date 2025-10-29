@@ -613,7 +613,7 @@ void Unit::TriggerHomeEvents()
     if (!hasUnitState(UNIT_STAT_NO_FOLLOW_MOVEMENT))
     {
         if (Unit* target = GetMaster())
-            GetMotionMaster()->MoveFollow(target, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE, false, IsPlayer() && !HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED));
+            AI()->RequestFollow(target);
         else if (IsLinkingEventTrigger())
             GetMap()->GetCreatureLinkingHolder()->TryFollowMaster((Creature*)this);
     }
@@ -1833,6 +1833,9 @@ SpellCastResult Unit::CastSpell(SpellCastArgs& args, SpellEntry const* spellInfo
 
     if (args.IsDestinationSet())
         targets.setDestination(args.GetDestination());
+
+    if (args.IsItemTargetSet())
+        targets.setItemTarget(args.GetItemTarget());
 
     spell->SetCastItem(castItem);
     return spell->SpellStart(&targets, triggeredByAura);
@@ -3402,6 +3405,7 @@ float Unit::CalculateEffectiveDodgeChance(const Unit* attacker, WeaponAttackType
     chance += (difference * factor);
     // Attacker's SPELL_AURA_MOD_COMBAT_RESULT_CHANCE contribution (or reduction)
     chance += attacker->GetTotalAuraModifierByMiscValue(SPELL_AURA_MOD_COMBAT_RESULT_CHANCE, VICTIMSTATE_DODGE);
+    chance += attacker->GetTotalAuraModifier(SPELL_AURA_MOD_ENEMY_DODGE);
     // Attacker's expertise reduction
     chance -= attacker->GetExpertisePercent(attType);
     return std::max(0.0f, std::min(chance, 100.0f));
@@ -4931,6 +4935,24 @@ int32 Unit::GetMaxNegativeAuraModifierByMiscValue(AuraType auratype, int32 misc_
     return modifier;
 }
 
+int32 Unit::GetMaxPositiveAuraModifierByItemClass(AuraType auratype, Item* weapon) const
+{
+    int32 modifier = 0;
+
+    AuraList const& mTotalAuraList = GetAurasByType(auratype);
+    for (auto i : mTotalAuraList)
+    {
+        Modifier* mod = i->GetModifier();
+        SpellEntry const* spellProto = i->GetSpellProto();
+        if (spellProto->EquippedItemClass == -1 ||
+            (weapon->IsFitToSpellRequirements(spellProto)))
+            if (mod->m_amount > modifier)
+                modifier = mod->m_amount;
+    }
+
+    return modifier;
+}
+
 bool Unit::AddSpellAuraHolder(SpellAuraHolder* holder)
 {
     SpellEntry const* aurSpellInfo = holder->GetSpellProto();
@@ -6341,18 +6363,20 @@ void Unit::CasterHitTargetWithSpell(Unit* realCaster, Unit* target, SpellEntry c
             target->SetStandState(UNIT_STAND_STATE_STAND);
 
         // Hostile spell hits count as attack made against target (if detected), stealth removed at Spell::cast if spell break it
-        const bool attack = (!IsPositiveSpell(spellInfo->Id, realCaster, target) && realCaster->IsVisibleForOrDetect(target, target, false) && realCaster->CanEnterCombat() && target->CanEnterCombat());
+        const bool bypassStealthAndEndIt = spellInfo->HasAttribute(SPELL_ATTR_EX_FAILURE_BREAKS_STEALTH) && !success;
+        const bool attack = (!IsPositiveSpell(spellInfo->Id, realCaster, target) && realCaster->IsVisibleForOrDetect(target, target, false, false, true, bypassStealthAndEndIt) &&
+                             realCaster->CanEnterCombat() && target->CanEnterCombat());
 
         // Mind soothe confirmed to aggro on resist
         if (attack && (!success || !spellInfo->HasAttribute(SPELL_ATTR_EX_THREAT_ONLY_ON_MISS)) && !spellInfo->HasAttribute(SPELL_ATTR_EX_NO_THREAT))
         {
-            if (success && !spellInfo->HasAttribute(SPELL_ATTR_EX2_NOT_AN_ACTION))
+            if (success && !spellInfo->HasAttribute(SPELL_ATTR_EX2_NOT_AN_ACTION) || bypassStealthAndEndIt)
             {
                 target->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_HOSTILE_ACTION);
 
                 // caster can be detected but have stealth aura
-                if (!spellInfo->HasAttribute(SPELL_ATTR_EX_ALLOW_WHILE_STEALTHED))
-                    realCaster->RemoveSpellsCausingAura(SPELL_AURA_MOD_STEALTH);
+                if (bypassStealthAndEndIt) // all other cases are handled through AURA_INTERRUPT_FLAG_ACTION
+                    realCaster->RemoveAurasWithDispelType(DISPEL_STEALTH);
             }
 
             target->AttackedBy(realCaster);
@@ -12393,7 +12417,7 @@ void Unit::AdjustZForCollision(float x, float y, float& z, float halfHeight) con
     }
 }
 
-uint32 Unit::GetSpellRank(SpellEntry const* spellInfo)
+uint32 Unit::GetSpellRank(SpellEntry const* spellInfo) const
 {
     uint32 spellRank = GetLevel();
     if (spellInfo->maxLevel > 0 && spellRank >= spellInfo->maxLevel * 5)

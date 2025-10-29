@@ -352,6 +352,15 @@ class SpellCastArgs
         }
         bool IsDestinationSet() const { return m_destinationSet; }
         Position GetDestination() const { return m_destination; }
+
+        SpellCastArgs& SetItemTarget(Item* itemTarget)
+        {
+            m_itemSet = true;
+            m_itemTarget = itemTarget;
+            return *this;
+        }
+        bool IsItemTargetSet() const { return m_itemSet; }
+        Item* GetItemTarget() const { return m_itemTarget; }
     private:
         Unit* m_target;
         uint64 m_scriptValue;
@@ -359,6 +368,8 @@ class SpellCastArgs
         int32* m_basePoints[3];
         bool m_destinationSet;
         Position m_destination;
+        bool m_itemSet;
+        Item* m_itemTarget;
 };
 
 class Spell
@@ -625,7 +636,7 @@ class Spell
 
             return false;
         }
-        bool IsChannelActive() const { return m_caster->GetUInt32Value(UNIT_CHANNEL_SPELL) != 0; }
+        bool IsChannelActive() const { return m_caster && m_caster->GetUInt32Value(UNIT_CHANNEL_SPELL) != 0; }
         bool IsMeleeAttackResetSpell() const { return !m_IsTriggeredSpell && (m_spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_COMBAT);  }
         bool IsRangedAttackResetSpell() const { return !m_IsTriggeredSpell && IsRangedSpell() && (m_spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_COMBAT); }
         bool IsEffectWithImplementedMultiplier(uint32 effectId) const;
@@ -830,6 +841,7 @@ class Spell
         void SetIgnoreRoot(bool state) { m_ignoreRoot = state; }
         void SetDamageDoneModifier(float mod, SpellEffectIndex effIdx);
         void SetUsableWhileStunned(bool state) { m_usableWhileStunned = state; }
+        void SetHelpfulThreatCoefficient(float coeff) { m_helpfulThreatCoeff = coeff; }
 
         MaNGOS::unique_weak_ptr<Spell> GetWeakPtr() const;
 
@@ -1021,6 +1033,9 @@ class Spell
 
         // GO casting preparations
         WorldObject* m_trueCaster;
+
+        // Applies coefficient to spell_threat to helpful target
+        float m_helpfulThreatCoeff;
 };
 
 enum ReplenishType

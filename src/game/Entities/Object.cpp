@@ -2204,6 +2204,8 @@ Creature* WorldObject::SummonCreature(TempSpawnSettings settings, Map* map)
                 creature->SetWalk(false);
             if (templateData->IsHovering())
                 creature->SetHover(true);
+            if (templateData->IsGravityDisabled())
+                creature->SetLevitate(true);
             relayId = templateData->relayId;
             if (templateData->stringId)
                 creature->SetStringId(templateData->stringId, true);
@@ -3072,7 +3074,7 @@ int32 WorldObject::CalculateSpellEffectValue(Unit const* target, SpellEntry cons
     int32 randomPoints = spellProto->EffectDieSides[effect_index];
     if (unitCaster && basePointsPerLevel != 0.f)
     {
-        int32 level = int32(unitCaster->GetLevel());
+        int32 level = int32(unitCaster->GetSpellRank(spellProto) / 5);
         if (level > (int32)spellProto->maxLevel && spellProto->maxLevel > 0)
             level = (int32)spellProto->maxLevel;
         else if (level < (int32)spellProto->baseLevel)

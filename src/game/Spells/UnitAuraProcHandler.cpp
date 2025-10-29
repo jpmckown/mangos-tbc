@@ -305,7 +305,7 @@ struct ProcTriggeredData
     bool canProc[MAX_EFFECT_INDEX];
 };
 
-typedef std::list< ProcTriggeredData > ProcTriggeredList;
+typedef std::vector<ProcTriggeredData> ProcTriggeredVector;
 
 uint32 createProcExtendMask(SpellNonMeleeDamage* spellDamageInfo, SpellMissInfo missCondition)
 {
@@ -494,7 +494,7 @@ void Unit::ProcDamageAndSpellFor(ProcSystemArguments& argData, bool isVictim)
 {
     ProcExecutionData execData(argData, isVictim);
 
-    ProcTriggeredList procTriggered;
+    ProcTriggeredVector procTriggered;
     std::vector<SpellAuraHolder*> holdersForDeletion;
     // Fill procTriggered list
     for (SpellAuraHolderMap::const_iterator itr = GetSpellAuraHolderMap().begin(); itr != GetSpellAuraHolderMap().end(); ++itr)
@@ -517,7 +517,7 @@ void Unit::ProcDamageAndSpellFor(ProcSystemArguments& argData, bool isVictim)
             if (procTriggeredData.spellProcEvent && procTriggeredData.spellProcEvent->cooldown)
                 cooldown = procTriggeredData.spellProcEvent->cooldown;
             if (cooldown)
-                holder->SetProcCooldown(std::chrono::seconds(cooldown), GetMap()->GetCurrentClockTime());
+                holder->SetProcCooldown(std::chrono::milliseconds(cooldown), GetMap()->GetCurrentClockTime());
         }
 
         if (result != SpellProcEventTriggerCheck::SPELL_PROC_TRIGGER_OK)
@@ -535,7 +535,7 @@ void Unit::ProcDamageAndSpellFor(ProcSystemArguments& argData, bool isVictim)
         return;
 
     // Handle effects proceed this time
-    for (ProcTriggeredList::const_iterator itr = procTriggered.begin(); itr != procTriggered.end(); ++itr)
+    for (ProcTriggeredVector::const_iterator itr = procTriggered.begin(); itr != procTriggered.end(); ++itr)
     {
         // Some auras can be deleted in function called in this loop (except first, ofc)
         SpellAuraHolder* triggeredByHolder = itr->triggeredByHolder;
@@ -583,7 +583,7 @@ void Unit::ProcDamageAndSpellFor(ProcSystemArguments& argData, bool isVictim)
         }
 
         if ((procSuccess || triggeredByHolder->GetSpellProto()->HasAttribute(SPELL_ATTR_EX2_PROC_COOLDOWN_ON_FAILURE)) && anyAuraProc && execData.cooldown)
-            triggeredByHolder->SetProcCooldown(std::chrono::seconds(execData.cooldown), GetMap()->GetCurrentClockTime());
+            triggeredByHolder->SetProcCooldown(std::chrono::milliseconds(execData.cooldown), GetMap()->GetCurrentClockTime());
 
         // Remove charge (aura can be removed by triggers)
         // Attribute example - drain soul vanilla - third effect fails when not have talent but charge should drop
@@ -812,7 +812,7 @@ SpellAuraProcResult Unit::TriggerProccedSpell(Unit* target, std::array<int32, MA
         CastSpell(target, spellInfo, TRIGGERED_OLD_TRIGGERED | TRIGGERED_INSTANT_CAST | TRIGGERED_DO_NOT_RESET_LEASH, castItem, triggeredByAura, originalCaster);
 
     if (cooldown)
-        triggeredByAura->GetHolder()->SetProcCooldown(std::chrono::seconds(cooldown), GetMap()->GetCurrentClockTime());
+        triggeredByAura->GetHolder()->SetProcCooldown(std::chrono::milliseconds(cooldown), GetMap()->GetCurrentClockTime());
 
     return SPELL_AURA_PROC_OK;
 }
@@ -1050,31 +1050,6 @@ SpellAuraProcResult Unit::HandleDummyAuraProc(ProcExecutionData& data)
 
                     target = this;
                     triggered_spell_id = 33494;
-                    break;
-                }
-                // Elemental Sieve
-                case 36035:
-                {
-                    Pet* pCaster = dynamic_cast<Pet*>(triggeredByAura->GetCaster());
-
-                    // aura only affect the spirit totem, since this is the one that need to be in range.
-                    // It is possible though, that player is the one who should actually have the aura
-                    // and check for presense of spirit totem, but then we can't script the dummy.
-                    if (!pCaster)
-                        return SPELL_AURA_PROC_FAILED;
-
-                    // Summon the soul of the spirit and cast the visual
-                    uint32 uiSoulEntry = 0;
-                    switch (GetEntry())
-                    {
-                        case 21050: uiSoulEntry = 21073; break; // Earthen Soul
-                        case 21061: uiSoulEntry = 21097; break; // Fiery Soul
-                        case 21059: uiSoulEntry = 21109; break; // Watery Soul
-                        case 21060: uiSoulEntry = 21116; break; // Airy Soul
-                    }
-
-                    CastSpell(this, 36206, TRIGGERED_OLD_TRIGGERED);
-                    pCaster->SummonCreature(uiSoulEntry, GetPositionX(), GetPositionY(), GetPositionZ(), 0, TEMPSPAWN_TIMED_OOC_OR_CORPSE_DESPAWN, 10000);
                     break;
                 }
                 // Vampiric Aura (boss spell)
@@ -2570,7 +2545,7 @@ SpellAuraProcResult Unit::HandleProcTriggerDamageAuraProc(ProcExecutionData& dat
     }
 
     if (cooldown)
-        triggeredByAura->GetHolder()->SetProcCooldown(std::chrono::seconds(cooldown), GetMap()->GetCurrentClockTime());
+        triggeredByAura->GetHolder()->SetProcCooldown(std::chrono::milliseconds(cooldown), GetMap()->GetCurrentClockTime());
 
     SpellNonMeleeDamage spellDamageInfo(this, victim, spellInfo->Id, SpellSchoolMask(spellInfo->SchoolMask));
     CalculateSpellDamage(&spellDamageInfo, triggeredByAura->GetModifier()->m_amount, spellInfo, triggeredByAura->GetEffIndex());
