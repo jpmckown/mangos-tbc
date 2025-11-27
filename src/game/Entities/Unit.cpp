@@ -886,6 +886,9 @@ void Unit::DealDamageMods(Unit* dealer, Unit* victim, uint32& damage, uint32* ab
 
     if (dealer) // dealer is optional
     {
+        if (dealer->IsDealTripleDamageToPets() && !victim->IsPlayer() && victim->IsPlayerControlled())
+            damage *= 3;
+
         // You don't lose health from damage taken from another player while in a sanctuary
         // You still see it in the combat log though
         if (!IsAllowedDamageInArea(dealer, victim))
@@ -10523,28 +10526,6 @@ bool Unit::SetStunned(bool apply, ObjectGuid casterGuid, uint32 spellID, bool lo
         SetImmobilizedState(apply, true, logout);
 
         ApplyModFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_STUNNED, hasUnitState(UNIT_STAT_STUNNED | UNIT_STAT_LOGOUT_TIMER));
-        return true;
-    }
-    return false;
-}
-
-bool Unit::SetStunnedByLogout(bool apply)
-{
-    if (SetStunned(apply, ObjectGuid(), 0, true))
-    {
-        // Sit down when eligible:
-        if (apply)
-        {
-            if (IsStandState())
-            {
-                if (!m_movementInfo.HasMovementFlag(MovementFlags(movementFlagsMask | MOVEFLAG_SWIMMING | MOVEFLAG_SPLINE_ENABLED)))
-                    SetStandState(UNIT_STAND_STATE_SIT);
-            }
-        }
-        // Stand up on cancel
-        else if (getStandState() == UNIT_STAND_STATE_SIT)
-            SetStandState(UNIT_STAND_STATE_STAND);
-
         return true;
     }
     return false;
