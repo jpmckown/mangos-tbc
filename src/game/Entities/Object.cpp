@@ -151,18 +151,6 @@ void Object::SendForcedObjectUpdate()
     }
 }
 
-void Object::BuildMovementUpdateBlock(UpdateData* data, uint8 flags) const
-{
-    ByteBuffer buf(500);
-
-    buf << uint8(UPDATETYPE_MOVEMENT);
-    buf << GetObjectGuid();
-
-    BuildMovementUpdate(&buf, flags);
-
-    data->AddUpdateBlock(buf);
-}
-
 void Object::BuildCreateUpdateBlockForPlayer(UpdateData* data, Player* target) const
 {
     if (!target)
@@ -520,7 +508,7 @@ void Object::BuildValuesUpdate(uint8 updatetype, ByteBuffer* data, UpdateMask* u
                         if (((Unit*)this)->HasAuraStateForCaster(AURA_STATE_CONFLAGRATE, target->GetObjectGuid()))
                             *data << m_uint32Values[index];
                         else
-                            *data << (m_uint32Values[index] & ~(1 << (AURA_STATE_CONFLAGRATE - 1)));
+                            *data << (m_uint32Values[index] & ~(convertEnumToFlag(AURA_STATE_CONFLAGRATE)));
                     }
                     else
                         *data << m_uint32Values[index];
@@ -2796,6 +2784,9 @@ bool WorldObject::IsSpellReady(SpellEntry const& spellEntry, ItemPrototype const
     else
         now = World::GetCurrentClockTime();
 
+    if (!m_cooldownMap.IsGlobalCooldownExpired(now))
+        return false;
+
     // overwrite category by provided category in item prototype during item cast if need
     if (itemProto)
     {
@@ -3173,13 +3164,14 @@ int32 WorldObject::CalculateSpellEffectValue(Unit const* target, SpellEntry cons
         if (damage)
         {
             CreatureInfo const* cInfo = static_cast<Creature const*>(unitCaster)->GetCreatureInfo();
-            CreatureClassLvlStats const* casterCLS = sObjectMgr.GetCreatureClassLvlStats(unitCaster->GetLevel(), cInfo->UnitClass, cInfo->Expansion);
-            CreatureClassLvlStats const* spellCLS = sObjectMgr.GetCreatureClassLvlStats(spellProto->spellLevel, cInfo->UnitClass, cInfo->Expansion);
+            // theory: uses vanilla expansion
+            CreatureClassLvlStats const* casterCLS = sObjectMgr.GetCreatureClassLvlStats(unitCaster->GetLevel(), cInfo->UnitClass, 0);
+            CreatureClassLvlStats const* spellCLS = sObjectMgr.GetCreatureClassLvlStats(spellProto->spellLevel, cInfo->UnitClass, 0);
             if (casterCLS && spellCLS)
             {
                 float CLSPowerCreature = casterCLS->BaseDamage;
                 float CLSPowerSpell = spellCLS->BaseDamage;
-                value = value * (CLSPowerCreature / CLSPowerSpell);
+                value = value * (CLSPowerCreature / CLSPowerSpell) * cInfo->DamageMultiplier;
             }
         }
     }
@@ -3260,4 +3252,42 @@ bool WorldObject::CheckAndIncreaseCastCounter()
 
     ++m_castCounter;
     return true;
+}
+
+bool CooldownContainer::AddCooldown(TimePoint clockNow, uint32 spellId, uint32 duration, uint32 spellCategory, uint32 categoryDuration, uint32 itemId, bool onHold)
+{
+    RemoveBySpellId(spellId);
+    auto resultItr = m_spellIdMap.emplace(spellId, std::make_unique<CooldownData>(clockNow, spellId, duration, spellCategory, categoryDuration, itemId, onHold));
+    // do not overwrite one permanent category cooldown with another permanent category cooldown
+    if (resultItr.second && spellCategory && categoryDuration)
+    {
+        SpellCategoryEntry const* spellCategoryEntry = sSpellCategory.LookupEntry(spellCategory);
+        if (spellCategoryEntry->flags & uint32(SpellCategoryFlags::CooldownIsGlobal))
+        {
+            m_globalCooldown = std::chrono::milliseconds(categoryDuration) + clockNow;
+            return resultItr.second;
+        }
+
+        auto catItr = FindByCategory(spellCategory);
+        if (!onHold || catItr == m_spellIdMap.end() || !catItr->second->IsPermanent())
+        {
+            // we must keep original category cd owner for sake of client sync
+            if (catItr != m_spellIdMap.end())
+            {
+                catItr->second->SetCatCDExpireTime(std::chrono::milliseconds(categoryDuration) + clockNow);
+                catItr->second->m_typePermanent = false;
+                resultItr.first->second->m_category = 0;
+            }
+            else
+                m_categoryMap.emplace(spellCategory, resultItr.first);
+        }
+        else
+            resultItr.first->second->m_category = 0;
+    }
+
+    return resultItr.second;
+}
+bool CooldownContainer::IsGlobalCooldownExpired(TimePoint& now) const
+{
+    return m_globalCooldown <= now;
 }

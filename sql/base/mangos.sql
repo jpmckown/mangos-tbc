@@ -23,7 +23,7 @@ DROP TABLE IF EXISTS `db_version`;
 CREATE TABLE `db_version` (
   `version` varchar(120) DEFAULT NULL,
   `creature_ai_version` varchar(120) DEFAULT NULL,
-  `required_s2485_01_mangos_closing_text` bit(1) DEFAULT NULL
+  `required_s2489_01_mangos_pet_spell_lists` bit(1) DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 ROW_FORMAT=DYNAMIC COMMENT='Used DB version notes';
 
 --
@@ -813,6 +813,7 @@ CREATE TABLE `creature_zone` (
   `Guid` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Global Unique Identifier',
   `ZoneId` mediumint unsigned NOT NULL DEFAULT '0' COMMENT 'Zone Identifier',
   `AreaId` mediumint unsigned NOT NULL DEFAULT '0' COMMENT 'Area Identifier',
+  `WmoGroupId` INT DEFAULT 0,
   PRIMARY KEY(`Guid`)
 );
 
@@ -1361,7 +1362,7 @@ CREATE TABLE `creature_template` (
   `HealthMultiplier` float NOT NULL DEFAULT '1',
   `PowerMultiplier` float NOT NULL DEFAULT '1',
   `DamageMultiplier` float NOT NULL DEFAULT '1',
-  `DamageVariance` float NOT NULL DEFAULT '1',
+  `DamageVariance` float NOT NULL DEFAULT '0.4',
   `ArmorMultiplier` float NOT NULL DEFAULT '1',
   `ExperienceMultiplier` float NOT NULL DEFAULT '1',
   `StrengthMultiplier` float NOT NULL DEFAULT '1',
@@ -1416,6 +1417,8 @@ CREATE TABLE `creature_template` (
   `StringId2` INT(11) UNSIGNED NOT NULL DEFAULT '0',
   `AIName` char(64) NOT NULL DEFAULT '',
   `ScriptName` char(64) NOT NULL DEFAULT '',
+  `DamageMultiplierOLD` float NOT NULL DEFAULT '1',
+  `DamageVarianceOLD` float NOT NULL DEFAULT '1',
   PRIMARY KEY (`entry`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 ROW_FORMAT=DYNAMIC COMMENT='Creature System';
 
@@ -1426,7 +1429,7 @@ CREATE TABLE `creature_template` (
 LOCK TABLES `creature_template` WRITE;
 /*!40000 ALTER TABLE `creature_template` DISABLE KEYS */;
 INSERT INTO `creature_template` VALUES
-(1,'Waypoint (Only GM can see it)','Visual',NULL,1,1,0,10045,0,0,0,100,0,0,0,35,1,8,8,1,1,0,0,4096,0,130,5242886,0,0,0,0,0.91,1.14286,20,0,0,0,0,0,0,-1,1,1,1,1,1,1,1,1,1,1,1,8,8,0,0,7,7,1.76,2.42,0,3,100,2000,2200,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,'','');
+(1,'Waypoint (Only GM can see it)','Visual',NULL,1,1,0,10045,0,0,0,100,0,0,0,35,1,8,8,1,1,0,0,4096,0,130,5242886,0,0,0,0,0.91,1.14286,20,0,0,0,0,0,0,-1,1,1,1,1,1,1,1,1,1,1,1,8,8,0,0,7,7,1.76,2.42,0,3,100,2000,2200,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,'','',1,1);
 /*!40000 ALTER TABLE `creature_template` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -2076,6 +2079,7 @@ CREATE TABLE `gameobject_zone` (
   `Guid` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Global Unique Identifier',
   `ZoneId` mediumint unsigned NOT NULL DEFAULT '0' COMMENT 'Zone Identifier',
   `AreaId` mediumint unsigned NOT NULL DEFAULT '0' COMMENT 'Area Identifier',
+  `WmoGroupId` INT DEFAULT 0,
   PRIMARY KEY(`Guid`)
 );
 
@@ -5004,6 +5008,16 @@ LOCK TABLES `pet_levelstats` WRITE;
 /*!40000 ALTER TABLE `pet_levelstats` DISABLE KEYS */;
 /*!40000 ALTER TABLE `pet_levelstats` ENABLE KEYS */;
 UNLOCK TABLES;
+
+DROP TABLE IF EXISTS `pet_autocast_spell_list`;
+CREATE TABLE `pet_autocast_spell_list` (
+`CreatureEntry` INT UNSIGNED NOT NULL,
+`SpellId` INT UNSIGNED NOT NULL,
+`CombatCondition` INT NOT NULL DEFAULT '-1',
+`TargetId` INT NOT NULL,
+`Comments` VARCHAR(255) NOT NULL,
+PRIMARY KEY(`CreatureEntry`, `SpellId`)
+);
 
 --
 -- Table structure for table `pet_name_generation`

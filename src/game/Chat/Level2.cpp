@@ -1256,7 +1256,11 @@ bool ChatHandler::HandleGameObjectNearCommand(char* args)
             if (SpawnGroupEntry* groupEntry = pl->GetMap()->GetMapDataContainer().GetSpawnGroupByGuid(guid, TYPEID_GAMEOBJECT))
                 spawnGroupId = groupEntry->Id;
 
-            PSendSysMessage(LANG_GO_MIXED_LIST_CHAT, guid, PrepareStringNpcOrGoSpawnInformation<GameObject>(guid).c_str(), entry, guid, name, x, y, z, mapid, spawnGroupId);
+            uint32 dynGuid = 0;
+            if (GameObject* go = pl->GetMap()->GetGameObject(guid))
+                dynGuid = go->GetGUIDLow();
+
+            PSendSysMessage(LANG_GO_MIXED_LIST_CHAT, guid, PrepareStringNpcOrGoSpawnInformation<GameObject>(guid).c_str(), entry, dynGuid, entry, name, x, y, z, mapid, spawnGroupId);
 
 
             ++count;
@@ -1356,7 +1360,7 @@ bool ChatHandler::HandleGameObjectNearSpawnedCommand(char* args)
         uint32 spawnGroupId = 0;
         if (SpawnGroupEntry* groupEntry = player->GetMap()->GetMapDataContainer().GetSpawnGroupByGuid(guid, TYPEID_GAMEOBJECT))
             spawnGroupId = groupEntry->Id;
-        PSendSysMessage(LANG_GO_MIXED_LIST_CHAT, guid.GetCounter(), PrepareStringNpcOrGoSpawnInformation<GameObject>(guid).c_str(), entry, guid, goInfo->name, x, y, z, go->GetMapId(), spawnGroupId);
+        PSendSysMessage(LANG_GO_MIXED_LIST_CHAT, guid.GetCounter(), PrepareStringNpcOrGoSpawnInformation<GameObject>(guid).c_str(), entry, guid, entry, goInfo->name, x, y, z, go->GetMapId(), spawnGroupId);
     }
 
     PSendSysMessage(LANG_COMMAND_NEAROBJMESSAGE, distance, gameobjects.size());

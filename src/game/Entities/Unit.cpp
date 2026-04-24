@@ -6807,9 +6807,9 @@ void Unit::ModifyAuraState(AuraState flag, bool apply)
 {
     if (apply)
     {
-        if (!HasFlag(UNIT_FIELD_AURASTATE, 1 << (flag - 1)))
+        if (!HasFlag(UNIT_FIELD_AURASTATE, convertEnumToFlag(flag)))
         {
-            SetFlag(UNIT_FIELD_AURASTATE, 1 << (flag - 1));
+            SetFlag(UNIT_FIELD_AURASTATE, convertEnumToFlag(flag));
             if (GetTypeId() == TYPEID_PLAYER)
             {
                 const PlayerSpellMap& sp_list = ((Player*)this)->GetSpellMap();
@@ -6826,9 +6826,9 @@ void Unit::ModifyAuraState(AuraState flag, bool apply)
     }
     else
     {
-        if (HasFlag(UNIT_FIELD_AURASTATE, 1 << (flag - 1)))
+        if (HasFlag(UNIT_FIELD_AURASTATE, convertEnumToFlag(flag)))
         {
-            RemoveFlag(UNIT_FIELD_AURASTATE, 1 << (flag - 1));
+            RemoveFlag(UNIT_FIELD_AURASTATE, convertEnumToFlag(flag));
 
             Unit::SpellAuraHolderMap& tAuras = GetSpellAuraHolderMap();
             for (Unit::SpellAuraHolderMap::iterator itr = tAuras.begin(); itr != tAuras.end();)
@@ -7802,7 +7802,7 @@ bool Unit::IsImmuneToSpell(SpellEntry const* spellInfo, bool /*castOnSelf*/, uin
 
         AuraList const& immuneAuraApply = GetAurasByType(SPELL_AURA_MECHANIC_IMMUNITY_MASK);
         for (auto iter : immuneAuraApply)
-            if (iter->GetModifier()->m_miscvalue & (1 << (mechanic - 1)))
+            if (iter->GetModifier()->m_miscvalue & (convertEnumToFlag(mechanic)))
                 return true;
     }
 
@@ -7830,7 +7830,7 @@ bool Unit::IsImmuneToSpellEffect(SpellEntry const* spellInfo, SpellEffectIndex i
 
         AuraList const& immuneAuraApply = GetAurasByType(SPELL_AURA_MECHANIC_IMMUNITY_MASK);
         for (auto iter : immuneAuraApply)
-            if (iter->GetModifier()->m_miscvalue & (1 << (mechanic - 1)))
+            if (iter->GetModifier()->m_miscvalue & convertEnumToFlag(mechanic))
                 return true;
     }
 
@@ -9267,7 +9267,7 @@ int32 Unit::CalculateAuraDuration(SpellEntry const* spellInfo, uint32 effectMask
 
     for (int32 mechanic = FIRST_MECHANIC; mechanic < MAX_MECHANIC; ++mechanic)
     {
-        if (!(mechanicMask & (1 << (mechanic - 1))))
+        if (!(mechanicMask & convertEnumToFlag(mechanic)))
             continue;
 
         int32 stackingMod = GetTotalAuraModifierByMiscValue(SPELL_AURA_MECHANIC_DURATION_MOD, mechanic);
@@ -11903,8 +11903,6 @@ bool Unit::TakeCharmOf(Unit* charmed, uint32 spellId, bool advertised /*= true*/
 
     CharmInfo* charmInfo = charmed->InitCharmInfo(charmed);
 
-    bool isPossessCharm = IsPossessCharmType(spellId);
-
     Position combatStartPosition;
 
     if (charmed->IsPlayer())
@@ -11917,15 +11915,10 @@ bool Unit::TakeCharmOf(Unit* charmed, uint32 spellId, bool advertised /*= true*/
 
         charmInfo->SetCharmState("PetAI");
 
-        if (isPossessCharm)
-            charmInfo->InitPossessCreateSpells();
-        else
-        {
-            charmInfo->InitCharmCreateSpells();
-            charmed->AI()->SetReactState(REACT_DEFENSIVE);
-            charmInfo->SetCommandState(COMMAND_FOLLOW);
-            charmInfo->SetIsRetreating(true);
-        }
+        charmInfo->InitCharmCreateSpells();
+        charmed->AI()->SetReactState(REACT_DEFENSIVE);
+        charmInfo->SetCommandState(COMMAND_FOLLOW);
+        charmInfo->SetIsRetreating(true);
 
         charmedPlayer->ClearSelectionGuid();
 
@@ -11937,10 +11930,8 @@ bool Unit::TakeCharmOf(Unit* charmed, uint32 spellId, bool advertised /*= true*/
 
         charmedCreature->GetCombatStartPosition(combatStartPosition);
 
-        if (charmed->AI() && charmed->AI()->CanHandleCharm())
-            charmInfo->SetCharmState("", false);
-        else
-            charmInfo->SetCharmState("PetAI");
+        bool changeAI = !static_cast<Creature*>(charmed)->GetSettings().HasFlag(CreatureStaticFlags2::ACTION_TRIGGERS_WHILE_CHARMED);
+        charmInfo->SetCharmState(changeAI ? "PetAI" : "", changeAI);
 
         charmedCreature->SetWalk(IsWalking(), true);
 
@@ -11951,11 +11942,9 @@ bool Unit::TakeCharmOf(Unit* charmed, uint32 spellId, bool advertised /*= true*/
         if (uint32 charmedSpellList = charmedCreature->GetCreatureInfo()->CharmedSpellList)
             charmedCreature->SetSpellList(charmedSpellList);
 
-        if (isPossessCharm)
-            charmInfo->InitPossessCreateSpells();
-        else
+        charmInfo->InitCharmCreateSpells();
+        if (changeAI)
         {
-            charmInfo->InitCharmCreateSpells();
             charmed->AI()->SetReactState(REACT_DEFENSIVE);
             charmInfo->SetCommandState(COMMAND_FOLLOW);
             charmInfo->SetIsRetreating(true);
@@ -12105,11 +12094,13 @@ void Unit::Uncharm(Unit* charmed, uint32 spellId)
     else
         m_charmedUnitsPrivate.erase(charmedGuid);
 
+    bool changeAI = charmed->IsCreature() && static_cast<Creature*>(charmed)->GetSettings().HasFlag(CreatureStaticFlags2::ACTION_TRIGGERS_WHILE_CHARMED);
+
     // Update movement of the victim
     // Update crowd controlled movement if required:
     // TODO: requires motionmster upgrade for proper handling past this line
     // We are effectively rebuilding motion master contents: confused > fleeing > panic
-    if (!IsPossessCharmType(spellId))
+    if (changeAI)
     {
         const bool panic = charmed->IsInPanic(), fleeing = charmed->IsFleeing(), confused = charmed->IsConfused();
 
