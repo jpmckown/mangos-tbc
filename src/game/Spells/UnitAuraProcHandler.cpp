@@ -1719,6 +1719,16 @@ SpellAuraProcResult Unit::HandleDummyAuraProc(ProcExecutionData& data)
                         CastSpell(target, 42463, TRIGGERED_OLD_TRIGGERED, nullptr, triggeredByAura);
                     break;
                 }
+                case 35395: // Crusader Strike
+                {
+                    triggered_spell_id = 31803;
+
+                    // Trigger vengeance effect from Crusader Strike when fully stacked
+                    const SpellAuraHolder* existing = target->GetSpellAuraHolder(31803, GetObjectGuid());
+                    if (existing && existing->GetStackAmount() >= 5)
+                        CastSpell(target, 42463, TRIGGERED_OLD_TRIGGERED, nullptr, triggeredByAura);
+                    break;
+                }
             }
             break;
         }

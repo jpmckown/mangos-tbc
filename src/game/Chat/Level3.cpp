@@ -1816,6 +1816,127 @@ bool ChatHandler::HandleAddItemSetCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleAddRecipeCommand(char* args)
+{
+    uint32 spellId = ExtractSpellIdFromLink(&args);
+    if (!spellId)
+    {
+        if (!ExtractUInt32(&args, spellId))
+            return false;
+    }
+
+    uint32 craftCount = 1;
+    if (*args)
+    {
+        if (!ExtractUInt32(&args, craftCount))
+            return false;
+    }
+
+    if (craftCount < 1 || craftCount > 50)
+    {
+        PSendSysMessage("Craft count must be between 1 and 50.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellId);
+    if (!spellInfo)
+    {
+        PSendSysMessage("Spell %u not found.", spellId);
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    Player* pl = m_session->GetPlayer();
+    Player* plTarget = getSelectedPlayer();
+    if (!plTarget)
+        plTarget = pl;
+
+    DETAIL_LOG("addrecipe %u x%u", spellId, craftCount);
+
+    // Pre-check inventory space for all reagents
+    for (uint32 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (spellInfo->Reagent[i] <= 0)
+            continue;
+
+        uint32 itemId = spellInfo->Reagent[i];
+        uint32 singleCount = spellInfo->ReagentCount[i];
+        if (singleCount == 0)
+            continue;
+
+        uint32 totalNeeded = singleCount * craftCount;
+
+        ItemPrototype const* pProto = ObjectMgr::GetItemPrototype(itemId);
+        if (!pProto)
+        {
+            PSendSysMessage("Recipe %u reagent item %u not found.", spellId, itemId);
+            SetSentErrorMessage(true);
+            return false;
+        }
+
+        uint32 noSpaceForCount = 0;
+        ItemPosCountVec dest;
+        InventoryResult msg = plTarget->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, totalNeeded, &noSpaceForCount);
+        if (msg != EQUIP_ERR_OK || noSpaceForCount > 0)
+        {
+            PSendSysMessage("Insufficient inventory space for recipe %u. Need %u of item %u, but only %u can fit.",
+                            spellId, totalNeeded, itemId, totalNeeded - noSpaceForCount);
+            SetSentErrorMessage(true);
+            return false;
+        }
+    }
+
+    // All checks passed, now add the items
+    bool addedAny = false;
+    for (uint32 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (spellInfo->Reagent[i] <= 0)
+            continue;
+
+        uint32 itemId = spellInfo->Reagent[i];
+        uint32 singleCount = spellInfo->ReagentCount[i];
+        if (singleCount == 0)
+            continue;
+
+        uint32 totalNeeded = singleCount * craftCount;
+
+        ItemPrototype const* pProto = ObjectMgr::GetItemPrototype(itemId);
+        if (!pProto)
+            continue;
+
+        ItemPosCountVec dest;
+        InventoryResult msg = plTarget->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, totalNeeded);
+        if (msg != EQUIP_ERR_OK || dest.empty())
+            continue;
+
+        Item* item = plTarget->StoreNewItem(dest, itemId, true, Item::GenerateItemRandomPropertyId(itemId));
+        if (!item)
+            continue;
+
+        // remove binding for GM target
+        if (pl == plTarget)
+            for (ItemPosCountVec::const_iterator itr = dest.begin(); itr != dest.end(); ++itr)
+                if (Item* item1 = pl->GetItemByPos(itr->pos))
+                    item1->SetBinding(false);
+
+        pl->SendNewItem(item, totalNeeded, false, true);
+        if (pl != plTarget)
+            plTarget->SendNewItem(item, totalNeeded, true, false);
+
+        addedAny = true;
+    }
+
+    if (!addedAny)
+    {
+        PSendSysMessage("Recipe %u did not add any reagents.", spellId);
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    return true;
+}
+
 bool ChatHandler::HandleListItemCommand(char* args)
 {
     uint32 item_id;

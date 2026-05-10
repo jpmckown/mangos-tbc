@@ -25,14 +25,14 @@ struct SealOfTheCrusader : public AuraScript
 {
     void OnApply(Aura* aura, bool apply) const override
     {
-        // if (aura->GetEffIndex() == EFFECT_INDEX_1)
-        // {
-        //     // Seal of the Crusader damage reduction
-        //     // SotC increases attack speed but reduces damage to maintain the same DPS
-        //     float reduction = (-100.0f * aura->GetModifier()->m_amount) / (aura->GetModifier()->m_amount + 100.0f);
-        //     aura->GetTarget()->HandleStatModifier(UNIT_MOD_DAMAGE_MAINHAND, TOTAL_PCT, reduction, apply);
-        //     return;
-        // }
+        if (aura->GetEffIndex() == EFFECT_INDEX_1)
+        {
+            // Seal of the Crusader damage reduction
+            // SotC increases attack speed but reduces damage to maintain the same DPS
+            float reduction = (-100.0f * aura->GetModifier()->m_amount) / (aura->GetModifier()->m_amount + 100.0f);
+            aura->GetTarget()->HandleStatModifier(UNIT_MOD_DAMAGE_MAINHAND, TOTAL_PCT, reduction, apply);
+            return;
+        }
 
         if (aura->GetEffIndex() == EFFECT_INDEX_2)
         {
@@ -316,6 +316,30 @@ struct JudgementOfCommand : public SpellScript
     }
 };
 
+// 20188, 20300, 20301, 20302, 20303, 21183, 27159 - Judgement of the Crusader
+struct JudgementOfTheCrusader : public SpellScript
+{
+    void OnEffectExecute(Spell* spell, SpellEffectIndex /*effIdx*/) const override
+    {
+        Unit* target = spell->GetUnitTarget();
+        if (!target)
+            return;
+
+        Unit* caster = spell->GetCaster();
+        if (!caster)
+            return;
+
+        // check if target has the debuff
+        if (target->HasAura(spell->m_spellInfo->Id))
+        {
+            const int32 amount = target->GetAura(spell->m_spellInfo->Id, EFFECT_INDEX_0)->GetAmount();
+            // double damage
+            spell->SetDamage(uint32(amount * 2));
+        }
+
+    }
+};
+
 void LoadPaladinScripts()
 {
     RegisterSpellScript<JudgementOfLightIntermediate>("spell_judgement_of_light_intermediate");
@@ -330,4 +354,5 @@ void LoadPaladinScripts()
     RegisterSpellScript<BlessingOfLight>("spell_blessing_of_light");
     RegisterSpellScript<JudgementOfCommand>("spell_judgement_of_command");
     RegisterSpellScript<SealOfVengeance>("spell_seal_of_vengeance");
+    RegisterSpellScript<JudgementOfTheCrusader>("spell_judgement_of_the_crusader");
 }

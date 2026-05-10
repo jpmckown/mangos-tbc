@@ -20979,6 +20979,9 @@ Item* Player::ConvertItem(Item* item, uint32 newItemId)
 uint32 Player::CalculateTalentsPoints() const
 {
     uint32 talentPointsForLevel = GetLevel() < 10 ? 0 : GetLevel() - 9;
+    if (this->GetSession()->GetSecurity() >= SEC_GAMEMASTER) {
+        return uint32(talentPointsForLevel * sWorld.getConfig(CONFIG_FLOAT_RATE_TALENT) * 3);    
+    }
     return uint32(talentPointsForLevel * sWorld.getConfig(CONFIG_FLOAT_RATE_TALENT));
 }
 
@@ -21983,6 +21986,15 @@ void Player::AddCooldown(SpellEntry const& spellEntry, ItemPrototype const* item
 
     if (permanent)
     {
+        // Same modifiers as non-permanent path; otherwise SPELL_ATTR_COOLDOWN_ON_EVENT spells store
+        // unmodified RecoveryTime / CategoryRecoveryTime while the client still applies SPELLMOD_COOLDOWN.
+        if (recTime)
+            ApplySpellMod(spellEntry.Id, SPELLMOD_COOLDOWN, recTime);
+        else if (spellCategory && categoryRecTime)
+            ApplySpellMod(spellEntry.Id, SPELLMOD_COOLDOWN, categoryRecTime);
+        if (recTime && categoryRecTime)
+            ApplySpellMod(spellEntry.Id, SPELLMOD_COOLDOWN, categoryRecTime);
+
         m_cooldownMap.AddCooldown(GetMap()->GetCurrentClockTime(), spellEntry.Id, recTime, spellCategory, categoryRecTime, itemId, true);
         return;
     }
@@ -22001,6 +22013,9 @@ void Player::AddCooldown(SpellEntry const& spellEntry, ItemPrototype const* item
     if (recTime)
         ApplySpellMod(spellEntry.Id, SPELLMOD_COOLDOWN, recTime);
     else if (spellCategory && categoryRecTime)
+        ApplySpellMod(spellEntry.Id, SPELLMOD_COOLDOWN, categoryRecTime);
+    // When both spell and category timers run, only the branch above reduced recTime; reduce category too.
+    if (recTime && categoryRecTime)
         ApplySpellMod(spellEntry.Id, SPELLMOD_COOLDOWN, categoryRecTime);
 
     if (recTime || categoryRecTime || wasPermanent)

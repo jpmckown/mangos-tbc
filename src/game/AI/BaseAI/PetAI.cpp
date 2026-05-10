@@ -470,6 +470,9 @@ SpellCastResult PetAI::CheckPetCast(SpellEntry const* spellInfo, Unit* target) c
         bool script = false;
         for (unsigned int i : spellInfo->EffectImplicitTargetA)
         {
+            if (i >= MAX_SPELL_TARGETS) // safety guard for wrong data in DB
+                continue;
+
             SpellTargetInfo& targetData = SpellTargetInfoTable[i];
             
             if (targetData.filter == TARGET_SCRIPT)

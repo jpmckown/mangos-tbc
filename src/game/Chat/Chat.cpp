@@ -1027,6 +1027,7 @@ ChatCommand* ChatHandler::getCommandTable()
         { "hidearea",       SEC_ADMINISTRATOR,  false, &ChatHandler::HandleHideAreaCommand,            "", nullptr },
         { "additem",        SEC_ADMINISTRATOR,  false, &ChatHandler::HandleAddItemCommand,             "", nullptr },
         { "additemset",     SEC_ADMINISTRATOR,  false, &ChatHandler::HandleAddItemSetCommand,          "", nullptr },
+        { "addrecipe",      SEC_ADMINISTRATOR,  false, &ChatHandler::HandleAddRecipeCommand,           "", nullptr },
         { "bank",           SEC_ADMINISTRATOR,  false, &ChatHandler::HandleBankCommand,                "", nullptr },
         { "wchange",        SEC_ADMINISTRATOR,  false, &ChatHandler::HandleChangeWeatherCommand,       "", nullptr },
         { "testing",        SEC_GAMEMASTER,     false, nullptr,                                        "", testingCommandTable },

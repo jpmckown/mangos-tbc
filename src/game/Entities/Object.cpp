@@ -1752,15 +1752,19 @@ void WorldObject::MovePositionToFirstCollision(Position& pos, float dist, float 
         path.calculate(src, dest, false, true);
         if ((path.getPathType() & PATHFIND_NOPATH) == 0)
         {
-            G3D::Vector3 result = path.getPath().back();
-            destX = result.x;
-            destY = result.y;
-            destZ = result.z;
-            // no collision detected - reset height
-            if (dest.z == result.z)
-                AdjustZForCollision(destX, destY, destZ, halfHeight);
-            if (transport) // transport produces offset, but we need global pos
-                transport->CalculatePassengerPosition(destX, destY, destZ);
+            const auto& pathVec = path.getPath();
+            if (!pathVec.empty())
+            {
+                G3D::Vector3 result = pathVec.back();
+                destX = result.x;
+                destY = result.y;
+                destZ = result.z;
+                // no collision detected - reset height
+                if (dest.z == result.z)
+                    AdjustZForCollision(destX, destY, destZ, halfHeight);
+                if (transport) // transport produces offset, but we need global pos
+                    transport->CalculatePassengerPosition(destX, destY, destZ);
+            }
         }
     }
 
