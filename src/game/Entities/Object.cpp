@@ -1750,7 +1750,7 @@ void WorldObject::MovePositionToFirstCollision(Position& pos, float dist, float 
         }
         UpdateAllowedPositionZ(dest.x, dest.y, dest.z);
         path.calculate(src, dest, false, true);
-        if ((path.getPathType() & PATHFIND_NOPATH) == 0)
+        if ((path.getPathType() & PATHFIND_NOPATH) == 0 && !path.getPath().empty())
         {
             const auto& pathVec = path.getPath();
             if (!pathVec.empty())
@@ -3168,14 +3168,13 @@ int32 WorldObject::CalculateSpellEffectValue(Unit const* target, SpellEntry cons
         if (damage)
         {
             CreatureInfo const* cInfo = static_cast<Creature const*>(unitCaster)->GetCreatureInfo();
-            // theory: uses vanilla expansion
-            CreatureClassLvlStats const* casterCLS = sObjectMgr.GetCreatureClassLvlStats(unitCaster->GetLevel(), cInfo->UnitClass, 0);
-            CreatureClassLvlStats const* spellCLS = sObjectMgr.GetCreatureClassLvlStats(spellProto->spellLevel, cInfo->UnitClass, 0);
+            CreatureClassLvlStats const* casterCLS = sObjectMgr.GetCreatureClassLvlStats(unitCaster->GetLevel(), cInfo->UnitClass, cInfo->Expansion);
+            CreatureClassLvlStats const* spellCLS = sObjectMgr.GetCreatureClassLvlStats(spellProto->spellLevel, cInfo->UnitClass, cInfo->Expansion);
             if (casterCLS && spellCLS)
             {
                 float CLSPowerCreature = casterCLS->BaseDamage;
                 float CLSPowerSpell = spellCLS->BaseDamage;
-                value = value * (CLSPowerCreature / CLSPowerSpell) * cInfo->DamageMultiplier;
+                value = value * (CLSPowerCreature / CLSPowerSpell);
             }
         }
     }
