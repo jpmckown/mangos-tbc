@@ -5,6 +5,13 @@ enum LeechSpells
     SPELL_HEAL = 18984,
 
     SPELL_HEALTH_REGEN_BOOST = 55000, // instance zone aura (spell_area) carrying the leech
+
+    // Encounter-scoped copies for outdoor world bosses (no zone aura): 30 s copies of the zone auras, refreshed by the
+    // boss's pulse while in combat, so they fall off on their own after the fight. The zone auras themselves can't be
+    // used there: Player::UpdateAreaDependentAuras strips them outside their spell_area zones.
+    SPELL_ENCOUNTER_HEALTH_REGEN = 55010, // copy of 55000, carries the leech
+    SPELL_ENCOUNTER_MANA_REGEN   = 55011, // copy of 55001
+    SPELL_ENCOUNTER_COMBAT_BOOST = 55012, // copy of 55006 (40-man tier)
 };
 
 // Every bound UnitScript runs on every damage event, so each script instance must only react to
@@ -31,6 +38,21 @@ struct InstanceLeechOnDamageHealing : public UnitScript {
     }
 };
 
+// 55009 - Encounter Blessing (pulse cast by the boss on every enemy within 100 yd)
+struct EncounterBlessingPulse : public SpellScript {
+    void OnEffectExecute(Spell* spell, SpellEffectIndex effIdx) const override {
+        if (effIdx != EFFECT_INDEX_0) return;
+        Unit* target = spell->GetUnitTarget();
+        if (!target || target->GetTypeId() != TYPEID_PLAYER || !target->IsAlive()) return;
+        if (target->HasAura(SPELL_HEALTH_REGEN_BOOST)) return; // never stack with a zone blessing
+        target->CastSpell(target, SPELL_ENCOUNTER_HEALTH_REGEN, TRIGGERED_OLD_TRIGGERED);
+        target->CastSpell(target, SPELL_ENCOUNTER_MANA_REGEN, TRIGGERED_OLD_TRIGGERED);
+        target->CastSpell(target, SPELL_ENCOUNTER_COMBAT_BOOST, TRIGGERED_OLD_TRIGGERED);
+    }
+};
+
 void LoadInstanceScripts() {
     RegisterSpellScript<InstanceLeechOnDamageHealing<SPELL_HEALTH_REGEN_BOOST>>("spell_instance_heal");
+    RegisterSpellScript<InstanceLeechOnDamageHealing<SPELL_ENCOUNTER_HEALTH_REGEN>>("spell_instance_heal_encounter");
+    RegisterSpellScript<EncounterBlessingPulse>("spell_encounter_blessing");
 }

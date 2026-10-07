@@ -56,12 +56,16 @@ enum
 
     SPELL_EARTHQUAKE_VISUAL     = 41966,        // used in OOC sequence for RP
 
+    // Fork: Shadowmoon Valley has no subzone for a zone blessing, so the encounter grants it (see InstanceLeech.cpp)
+    SPELL_ENCOUNTER_BLESSING    = 55009,
+
     COUNT_OVERRUN               = 5,
     POINT_OVERRUN               = 1,
 };
 
 enum DoomwalkerActions
 {
+    DOOMWALKER_ENCOUNTER_BLESSING,
     DOOMWALKER_ACTION_MAX,
     DOOMWALKER_OVERRUN_SPELL,
 };
@@ -71,6 +75,7 @@ struct boss_doomwalkerAI : public CombatAI
     boss_doomwalkerAI(Creature* creature) : CombatAI(creature, DOOMWALKER_ACTION_MAX)
     {
         AddOnKillText(SAY_SLAY_1, SAY_SLAY_2, SAY_SLAY_3);
+        AddCombatAction(DOOMWALKER_ENCOUNTER_BLESSING, 0u);
         AddCustomAction(DOOMWALKER_OVERRUN_SPELL, true, [&]() { HandleOverrunDamage(); }, TIMER_COMBAT_COMBAT);
     }
 
@@ -188,6 +193,20 @@ struct boss_doomwalkerAI : public CombatAI
     {
         m_creature->CastSpell(nullptr, SPELL_OVERRUN_DAMAGE, TRIGGERED_NONE);
         ResetTimer(DOOMWALKER_OVERRUN_SPELL, 250); // meant to be done by spell script effect
+    }
+
+    void ExecuteAction(uint32 action) override
+    {
+        switch (action)
+        {
+            case DOOMWALKER_ENCOUNTER_BLESSING:
+            {
+                // Pulse at once, then every 10 s; the 30 s auras it grants run out after the fight
+                if (DoCastSpellIfCan(nullptr, SPELL_ENCOUNTER_BLESSING, CAST_TRIGGERED) == CAST_OK)
+                    ResetCombatAction(action, 10 * IN_MILLISECONDS);
+                break;
+            }
+        }
     }
 
     void OnSpellCast(SpellEntry const* spellInfo, Unit* /*target*/) override
