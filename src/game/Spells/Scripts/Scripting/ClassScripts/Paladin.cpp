@@ -316,27 +316,37 @@ struct JudgementOfCommand : public SpellScript
     }
 };
 
-// 20188, 20300, 20301, 20302, 20303, 21183, 27159 - Judgement of the Crusader
+// 21183, 20188, 20300, 20301, 20302, 20303, 27159 - Judgement of the Crusader
+// custom: judging also deals a little Holy damage, as in the classic fork, where it is effect 3 (SCHOOL_DAMAGE, no
+// spell power coefficient). All three effects are taken here (the debuff, the aura Improved Judgement of the Crusader
+// modifies, the Replenishment trigger), so the script deals it under the judgement's own id. Ranks 1-6 use classic's
+// values; rank 7 (TBC only) scales rank 6 by the debuff's own growth (160 -> 218).
 struct JudgementOfTheCrusader : public SpellScript
 {
-    void OnEffectExecute(Spell* spell, SpellEffectIndex /*effIdx*/) const override
+    void OnEffectExecute(Spell* spell, SpellEffectIndex effIdx) const override
     {
+        if (effIdx != EFFECT_INDEX_0)
+            return;
+
         Unit* target = spell->GetUnitTarget();
-        if (!target)
-            return;
-
         Unit* caster = spell->GetCaster();
-        if (!caster)
+        if (!target || !caster || !target->IsAlive())
             return;
 
-        // check if target has the debuff
-        if (target->HasAura(spell->m_spellInfo->Id))
+        uint32 minDamage, maxDamage;
+        switch (spell->m_spellInfo->Id)
         {
-            const int32 amount = target->GetAura(spell->m_spellInfo->Id, EFFECT_INDEX_0)->GetAmount();
-            // double damage
-            spell->SetDamage(uint32(amount * 2));
+            case 21183: minDamage = 15;  maxDamage = 15;  break; // rank 1
+            case 20188: minDamage = 20;  maxDamage = 20;  break; // rank 2
+            case 20300: minDamage = 22;  maxDamage = 23;  break; // rank 3
+            case 20301: minDamage = 25;  maxDamage = 26;  break; // rank 4
+            case 20302: minDamage = 50;  maxDamage = 52;  break; // rank 5
+            case 20303: minDamage = 130; maxDamage = 138; break; // rank 6
+            case 27159: minDamage = 177; maxDamage = 188; break; // rank 7
+            default: return;
         }
 
+        caster->SpellNonMeleeDamageLog(target, spell->m_spellInfo->Id, urand(minDamage, maxDamage));
     }
 };
 

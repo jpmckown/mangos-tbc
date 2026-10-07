@@ -47,7 +47,6 @@
 #include "Spells/SpellDefines.h"
 #include "Maps/SpawnGroupDefines.h"
 
-#include <cstdint>
 #include <list>
 #include <array>
 
@@ -2775,8 +2774,6 @@ class Unit : public WorldObject
         template <typename TR>
         void CastSpell(float x, float y, float z, SpellEntry const* spell, TR triggered);
 
-        // Seal of Crusader auras
-        std::vector<uint32> seal_of_the_crusader_auras = {21082, 20162, 20305, 20306, 20307, 20308, 27158};
 };
 
 template<typename Func>
