@@ -25,6 +25,7 @@ EndScriptData */
 #include "karazhan.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
 #include "Spells/Scripts/SpellScript.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -91,6 +92,9 @@ enum
     NPC_VOID_ZONE               = 16697,
 
     MAX_PORTALS                 = 3,
+
+    // Fork (solo): Netherspite needs 3 players for all of its mechanics (one per beam)
+    NETHERSPITE_FULL_BEAM_PLAYERS = 3,
 };
 
 // at first spawn portals got fixed coords, should be shuffled in subsequent beam phases
@@ -276,7 +280,12 @@ struct boss_netherspiteAI : public CombatAI
 
     void DoSummonPortals()
     {
-        for (uint8 i = 0; i < MAX_PORTALS; ++i)
+        // Fork (solo): one portal (beam) per player, up to all three. With fewer, the colours are picked at random
+        uint32 portalCount = std::min(GetEncounterPlayerCount(m_creature->GetMap()), uint32(MAX_PORTALS));
+        if (portalCount < MAX_PORTALS)
+            std::shuffle(m_vPortalEntryList.begin(), m_vPortalEntryList.end(), *GetRandomGenerator());
+
+        for (uint8 i = 0; i < portalCount; ++i)
             m_creature->SummonCreature(m_vPortalEntryList[i], aPortalCoordinates[i].x, aPortalCoordinates[i].y, aPortalCoordinates[i].z, aPortalCoordinates[i].o, TEMPSPAWN_DEAD_DESPAWN, 0);
 
         // randomize the portals after the first summon
@@ -301,6 +310,18 @@ struct boss_netherspiteAI : public CombatAI
         }
     }
 
+    // Fork (solo): Nether Portal - Perseverence 30466 (the red beam on Netherspite) is only a 1 hp periodic heal in the DBC,
+    // and nothing implemented its tooltip "damage taken reduced by $s1%": 1% per stack, up to 99%
+    void DamageTaken(Unit* /*dealer*/, uint32& damage, DamageEffectType damagetype, SpellEntry const* /*spellInfo*/) override
+    {
+        if (damagetype == INSTAKILL || !damage)
+            return;
+
+        uint32 stacks = std::min(m_creature->GetAuraCount(SPELL_PERSEVERENCE_NS), 99u);
+        if (stacks)
+            damage = damage * (100 - stacks) / 100;
+    }
+
     void ExecuteAction(uint32 action) override
     {
         switch (action)
@@ -318,6 +339,13 @@ struct boss_netherspiteAI : public CombatAI
             }
             case NETHERSPITE_EMPOWERMENT:
             {
+                // Fork (solo): no Empowerment (+200% damage) with fewer than 3 players; the portals still attune
+                if (GetEncounterPlayerCount(m_creature->GetMap()) < NETHERSPITE_FULL_BEAM_PLAYERS)
+                {
+                    DoCastSpellIfCan(m_creature, SPELL_PORTAL_ATTUNEMENT, CAST_TRIGGERED);
+                    DisableCombatAction(action);
+                    break;
+                }
                 if (DoCastSpellIfCan(m_creature, SPELL_EMPOWERMENT) == CAST_OK)
                 {
                     DoCastSpellIfCan(m_creature, SPELL_PORTAL_ATTUNEMENT, CAST_TRIGGERED);

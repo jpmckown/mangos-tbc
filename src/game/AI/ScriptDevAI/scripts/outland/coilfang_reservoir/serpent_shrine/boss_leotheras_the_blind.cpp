@@ -466,17 +466,19 @@ struct InsidiousWhisper : public SpellScript, public AuraScript
         if ((apply && faction_rank >= REP_FRIENDLY) || (!apply && player->GetReputationRank(aura->GetModifier()->m_amount) >= REP_FRIENDLY))
             player->StopAttackFaction(aura->GetModifier()->m_amount);
 
-        if (!apply)
-        {
-            if (aura->GetRemoveMode() == AURA_REMOVE_BY_EXPIRE) // MC player if inner demon was not killed
-            {
-                if (Unit* caster = aura->GetCaster())
-                {
-                    caster->CastSpell(target, 37749, TRIGGERED_OLD_TRIGGERED); // Consuming Madness
-                    caster->getThreatManager().modifyThreatPercent(target, -100);
-                }
-            }
-        }
+        // Fork (solo): mind control of the player goes. A missed Inner Demon no longer charms its player with Consuming Madness
+        // (with a pet tanking, a solo hunter/warlock gets the demon and the charm would be a wipe).
+        // if (!apply)
+        // {
+        //     if (aura->GetRemoveMode() == AURA_REMOVE_BY_EXPIRE) // MC player if inner demon was not killed
+        //     {
+        //         if (Unit* caster = aura->GetCaster())
+        //         {
+        //             caster->CastSpell(target, 37749, TRIGGERED_OLD_TRIGGERED); // Consuming Madness
+        //             caster->getThreatManager().modifyThreatPercent(target, -100);
+        //         }
+        //     }
+        // }
     }
 };
 

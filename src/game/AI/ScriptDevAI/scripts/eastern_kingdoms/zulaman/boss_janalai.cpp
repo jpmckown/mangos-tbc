@@ -24,6 +24,7 @@ EndScriptData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "zulaman.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -424,6 +425,16 @@ struct HatchEggs : public SpellScript
     }
 };
 
+// Fork (solo): 43144 Hatch All Eggs at 35% hatches every egg left (up to 40), all on one player when solo.
+// Cap it by player count: 5 eggs solo, up to all 40 with a full 10-man raid.
+struct HatchAllEggs : public SpellScript
+{
+    void OnInit(Spell* spell) const override
+    {
+        spell->SetMaxAffectedTargets(uint32(ScaleByPlayerCount(spell->GetCaster()->GetMap(), 10, 5.0f, float(MAX_EGGS_ON_SIDE * 2)) + 0.5f));
+    }
+};
+
 void AddSC_boss_janalai()
 {
     Script* pNewScript = new Script;
@@ -437,4 +448,5 @@ void AddSC_boss_janalai()
     pNewScript->RegisterSelf();
 
     RegisterSpellScript<HatchEggs>("spell_hatch_eggs");
+    RegisterSpellScript<HatchAllEggs>("spell_hatch_all_eggs"); // Fork (solo)
 }

@@ -25,6 +25,7 @@ EndScriptData */
 #include "black_temple.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
 #include "Spells/Scripts/SpellScript.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -235,6 +236,12 @@ struct boss_teron_gorefiendAI : public CombatAI
             }
             case GOREFIEND_ACTION_SHADOW_OF_DEATH:
             {
+                // Fork (solo): never on the only player (a pet holds aggro): it kills them and leaves no one to fight
+                if (GetEncounterPlayerCount(m_creature->GetMap()) <= 1)
+                {
+                    ResetCombatAction(action, GetSubsequentActionTimer(GorefiendActions(action)));
+                    return;
+                }
                 if (Unit* target = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0, SPELL_SHADOW_OF_DEATH, SELECT_FLAG_PLAYER | SELECT_FLAG_NOT_AURA | SELECT_FLAG_SKIP_TANK))
                 {
                     if (DoCastSpellIfCan(target, SPELL_SHADOW_OF_DEATH) == CAST_OK)
@@ -269,7 +276,9 @@ struct npc_doom_blossomAI : public ScriptedAI
         {
             if (Unit* target = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0, SPELL_SHADOW_BOLT, SELECT_FLAG_PLAYER))
                 DoCastSpellIfCan(target, SPELL_SHADOW_BOLT);
-            ResetTimer(0, 1200);
+            // Fork (solo): every 1.2 s with a full raid, 1.2 s * 25 / players otherwise (30 s solo): in a raid the
+            // bolts spread over 25 players, solo all four blossoms bolted the one player
+            ResetTimer(0, 1200 * 25 / std::min(GetEncounterPlayerCount(m_creature->GetMap()), 25u));
         });
         SetReactState(REACT_PASSIVE);
         SetCombatMovement(false);

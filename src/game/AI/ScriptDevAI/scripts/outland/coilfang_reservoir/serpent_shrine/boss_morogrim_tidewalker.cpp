@@ -25,6 +25,7 @@ EndScriptData */
 #include "serpent_shrine.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
 #include "Spells/Scripts/SpellScript.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -296,6 +297,10 @@ struct WateryGrave : public SpellScript
     bool OnCheckTarget(const Spell* spell, Unit* target, SpellEffectIndex /*eff*/) const override
     {
         if (!target->IsAlive() || spell->GetCaster()->GetVictim() == target)
+            return false;
+
+        // Fork (solo): with a pet tanking, the only player would be ported into a bubble and stunned 6 s; nobody is ported when the map has one player
+        if (GetEncounterPlayerCount(spell->GetCaster()->GetMap()) <= 1)
             return false;
 
         return true;

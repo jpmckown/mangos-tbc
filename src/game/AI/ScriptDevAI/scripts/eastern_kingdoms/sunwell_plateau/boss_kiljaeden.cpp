@@ -25,6 +25,7 @@ EndScriptData */
 #include "sunwell_plateau.h"
 #include "Entities/TemporarySpawn.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 #include "Spells/Scripts/SpellScript.h"
 
 enum
@@ -597,6 +598,15 @@ struct boss_kiljaedenAI : public CombatAI, private DialogueHelper
         m_creature->SetInCombatWithZone();
     }
 
+    void Aggro(Unit* /*who*/) override
+    {
+        // Fork (solo): enrage 15 min at 25 players -> 27.5 min solo, linear by player count.
+        // 13.35M HP (6070 x 2200), plus solo 3 Sinister Reflections (1 per transition, 112k each) and ~15 Shield Orbs
+        // (20k each, now in melee reach) = ~14.0M; transitions stay attackable. That needs ~1,660 base DPS in 15 min
+        // at 85% uptime before the +1000% blessing. ~1,000 base (x11) needs 1,496 s; x1.1 = 1,646 s -> 27.5 min.
+        ResetCombatAction(KILJAEDEN_ENRAGE, uint32(ScaleByPlayerCount(m_creature->GetMap(), 25, 27.5f, 15.f) * float(MINUTE * IN_MILLISECONDS)));
+    }
+
     void HandleAttackDelay()
     {
         SetReactState(REACT_AGGRESSIVE);
@@ -971,7 +981,11 @@ struct npc_power_blue_flightAI : public ScriptedAI
             {
                 if (Player* player = m_creature->GetMap()->GetPlayer(m_creature->GetSpawnerGuid()))
                 {
-                    player->getHostileRefManager().deleteReferences();
+                    // Fork (solo): wiping the possessor's threat emptied Kil'jaeden's threat list when nobody else
+                    // was in the raid, so he evaded, failed the encounter and despawned. The immune, unattackable
+                    // body (45838) is only a suppressed target, so keep it on the threat lists when alone.
+                    if (GetEncounterPlayerCount(m_creature->GetMap()) > 1)
+                        player->getHostileRefManager().deleteReferences();
                     player->CastSpell(nullptr, SPELL_POSSESS_DRAKE_IMMUNE, TRIGGERED_OLD_TRIGGERED);
                     player->CastSpell(nullptr, SPELL_VENGEANCE_BLUE_FLIGHT, TRIGGERED_OLD_TRIGGERED);
                 }
@@ -1144,8 +1158,16 @@ struct npc_sinister_reflectionAI : public CombatAI
                 break;
             case SINISTER_HAMMER_OF_JUSTICE:
                 if (Unit* target = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0, SPELL_HAMMER_OF_JUSTICE, SELECT_FLAG_PLAYER | SELECT_FLAG_NOT_AURA))
+                {
                     if (DoCastSpellIfCan(target, SPELL_HAMMER_OF_JUSTICE) == CAST_OK)
-                        ResetCombatAction(action, urand(10000, 15000));
+                    {
+                        // Fork (solo): 4 s stun every 10-15 s is a stun chain on a lone paladin; 30-40 s solo -> stock at 25
+                        Map* map = m_creature->GetMap();
+                        uint32 minTimer = uint32(ScaleByPlayerCount(map, 25, 30000.f, 10000.f));
+                        uint32 maxTimer = uint32(ScaleByPlayerCount(map, 25, 40000.f, 15000.f));
+                        ResetCombatAction(action, urand(minTimer, maxTimer));
+                    }
+                }
                 break;
             case SINISTER_FIREBALL:
                 if (DoCastSpellIfCan(m_creature->GetVictim(), SPELL_FIREBALL) == CAST_OK)
@@ -1213,7 +1235,9 @@ struct SinisterReflection : public SpellScript
             return;
 
         // Summon 4 clones of the same player
-        for (uint8 i = 0; i < 4; ++i)
+        // Fork (solo): 1 clone solo -> 4 at 25 players (solo, every clone copies the only player)
+        uint32 clones = uint32(ScaleByPlayerCount(unitTarget->GetMap(), 25, 1.f, 4.f) + 0.5f);
+        for (uint32 i = 0; i < clones; ++i)
             unitTarget->CastSpell(nullptr, SPELL_SINISTER_REFLECTION_SUMMON, TRIGGERED_OLD_TRIGGERED);
 
         unitTarget->CastSpell(nullptr, SPELL_SINISTER_REFL_CLONE, TRIGGERED_OLD_TRIGGERED);

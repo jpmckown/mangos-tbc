@@ -91,8 +91,9 @@ struct MarkOfDoomlordKazzak : public AuraScript
 {
     void OnPeriodicCalculateAmount(Aura* aura, uint32& amount) const override
     {
+        // Fork (solo): 2% of max mana per tick instead of 5%, so a 10 s mark costs 20% of the pool, not 50%
         if (aura->GetTarget()->HasMana())
-            amount = aura->GetTarget()->GetMaxPower(POWER_MANA) * 5 / 100;        
+            amount = aura->GetTarget()->GetMaxPower(POWER_MANA) * 2 / 100;
     }
 
     void OnPeriodicTickEnd(Aura* aura) const override

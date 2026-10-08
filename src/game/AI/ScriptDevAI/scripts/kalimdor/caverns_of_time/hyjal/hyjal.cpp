@@ -24,6 +24,7 @@ EndScriptData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "hyjal.h"
 #include "Entities/TemporarySpawn.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 /* Battle of Mount Hyjal encounters:
 0 - Rage Winterchill event
@@ -1128,12 +1129,12 @@ void instance_mount_hyjal::OnCreatureDeath(Creature* creature)
             // Decrease counter, and update world-state
             if (creature->IsTemporarySummon()) // only for non-static spawns
             {
+                // Fork (solo): always forget dead trash. Trash that outlived its boss (ENEMYCOUNT already reset to 0)
+                // used to stay in m_waveSpawns forever, which hides the next boss's start gossip.
+                m_waveSpawns.erase(std::remove(m_waveSpawns.begin(), m_waveSpawns.end(), creature->GetObjectGuid()), m_waveSpawns.end());
                 int32 enemyCount = 0;
                 if ((enemyCount = instance->GetVariableManager().GetVariable(WORLD_STATE_MOUNT_HYJAL_ENEMYCOUNT)))
-                {
-                    m_waveSpawns.erase(std::remove(m_waveSpawns.begin(), m_waveSpawns.end(), creature->GetObjectGuid()), m_waveSpawns.end());
                     instance->GetVariableManager().SetVariable(WORLD_STATE_MOUNT_HYJAL_ENEMYCOUNT, --enemyCount);
-                }
                 if (m_nextWaveTimer && enemyCount == 0)
                     SpawnNextWave();
             }
@@ -1345,8 +1346,24 @@ void instance_mount_hyjal::SpawnWave(uint32 index, bool setTimer)
     SpawnWaveInfernals(index);
     if (setTimer)
     {
-        m_nextWaveTimer = m_hyjalWavesData[index].waveTimer;
+        // Fork (solo): smaller groups get more time between waves (x2 with 6 players down to stock with 25).
+        // With 5 players or fewer the next wave also waits until this one is dead (see Update).
+        m_nextWaveTimer = uint32(m_hyjalWavesData[index].waveTimer * ScaleByPlayerCount(instance, 25, 2.0f, 1.0f));
     }
+}
+
+// Fork (solo): true while a counted wave mob (or a wave infernal still being summoned) is alive
+bool instance_mount_hyjal::IsWaveStillAlive() const
+{
+    if (m_infernalsTimer)
+        return true;
+
+    for (ObjectGuid const& guid : m_waveSpawns)
+        if (Creature* creature = instance->GetCreature(guid))
+            if (creature->IsAlive())
+                return true;
+
+    return false;
 }
 
 void instance_mount_hyjal::SpawnWaveInfernals(uint32 index)
@@ -1652,14 +1669,16 @@ void instance_mount_hyjal::FailEvent()
     DespawnBase(BASE_HORDE);
     DespawnBase(BASE_ELF);
 
+    // Fork (solo): a fail right after a boss kill (m_hyjalWaves still on its boss wave) must not set that boss back to FAIL
+    uint32 failedBoss = TYPE_AZGALOR;
     if (m_hyjalWaves <= 8)
-        SetData(TYPE_WINTERCHILL, FAIL);
+        failedBoss = TYPE_WINTERCHILL;
     else if (m_hyjalWaves <= 17)
-        SetData(TYPE_ANETHERON, FAIL);
+        failedBoss = TYPE_ANETHERON;
     else if (m_hyjalWaves <= 26)
-        SetData(TYPE_KAZROGAL, FAIL);
-    else if (m_hyjalWaves <= 35)
-        SetData(TYPE_AZGALOR, FAIL);
+        failedBoss = TYPE_KAZROGAL;
+    if (m_hyjalWaves <= 35 && GetData(failedBoss) != DONE)
+        SetData(failedBoss, FAIL);
     DespawnWaveSpawns();
     instance->GetVariableManager().SetVariable(WORLD_STATE_MOUNT_HYJAL_WAVES, 0);
     instance->GetVariableManager().SetVariable(WORLD_STATE_MOUNT_HYJAL_ENABLE, 0);
@@ -1696,7 +1715,14 @@ void instance_mount_hyjal::Update(const uint32 diff)
     if (m_nextWaveTimer)
     {
         if (m_nextWaveTimer <= diff)
-            SpawnNextWave();
+        {
+            // Fork (solo): with 5 players or fewer the next wave (and the boss) only comes once the previous wave is dead.
+            // Checks the creatures themselves, so a miscounted ENEMYCOUNT can't stall the event.
+            if (GetEncounterPlayerCount(instance) <= 5 && IsWaveStillAlive())
+                m_nextWaveTimer = 2000;
+            else
+                SpawnNextWave();
+        }
         else
             m_nextWaveTimer -= diff;
     }

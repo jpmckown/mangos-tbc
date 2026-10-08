@@ -331,6 +331,10 @@ struct boss_kaelthasAI : public CombatAI
 
         m_advisorsAlive = 4;
 
+        // Fork (solo): upstream never initialized the Pyroblast counter (undefined behaviour); weapons of a previous attempt are forgotten too
+        m_pyroblastCounter = 0;
+        m_weapons.clear();
+
         SetRangedMode(true, 35.f, TYPE_PROXIMITY);
 
         SetCombatMovement(true);
@@ -603,6 +607,7 @@ struct boss_kaelthasAI : public CombatAI
             case SPELL_SHOCK_BARRIER:
                 if (m_uiPhase != PHASE_4_SOLO)
                     break;
+                m_pyroblastCounter = 0; // Fork (solo): each Shock Barrier starts a fresh sequence of three Pyroblasts
                 ResetCombatAction(KAEL_ACTION_PYROBLAST_SEQUENCE, 1);
                 break;
             case SPELL_MIND_CONTROL:
@@ -762,8 +767,25 @@ struct boss_kaelthasAI : public CombatAI
         }
     }
 
+    // Fork (solo): true while any of the summoned weapons is still alive
+    bool IsAnyWeaponAlive() const
+    {
+        for (ObjectGuid const& guid : m_weapons)
+            if (Creature* weapon = m_creature->GetMap()->GetCreature(guid))
+                if (weapon->IsAlive())
+                    return true;
+        return false;
+    }
+
     void HandlePhaseTwoEnd()
     {
+        // Fork (solo): phase 3 waits until every weapon is dead (the stock 120 s stays the minimum), so weapons and revived advisors never overlap
+        if (IsAnyWeaponAlive())
+        {
+            ResetTimer(KAEL_PHASE_TWO, 1000);
+            return;
+        }
+
         DoBroadcastText(SAY_PHASE3_ADVANCE, m_creature);
         m_uiPhase = PHASE_3_ADVISOR_ALL;
         m_uiPhaseSubphase = 0;

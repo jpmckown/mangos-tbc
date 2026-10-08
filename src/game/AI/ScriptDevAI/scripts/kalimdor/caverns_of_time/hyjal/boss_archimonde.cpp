@@ -114,7 +114,7 @@ struct boss_archimondeAI : public CombatAI
         AddCombatAction(ARCHIMONDE_ACTION_FEAR, 42000, 50000);
         AddCombatAction(ARCHIMONDE_ACTION_DOOMFIRE, 15000u);
         AddTimerlessCombatAction(ARCHIMONDE_ACTION_FINGER_OF_DEATH, false);
-        AddCombatAction(ARCHIMONDE_ACTION_FINGER_OF_DEATH_COOLUP, 10000u);
+        AddCombatAction(ARCHIMONDE_ACTION_FINGER_OF_DEATH_COOLUP, true); // Fork (solo): Finger of Death disabled, stock 10000u
         AddCombatAction(ARCHIMONDE_ACTION_HAND_OF_DEATH, uint32(10 * MINUTE * IN_MILLISECONDS));
         AddCombatAction(ARCHIMONDE_ACTION_SOUL_CHARGE, 5000u);
         SetDeathPrevention(true);
@@ -303,6 +303,10 @@ struct boss_archimondeAI : public CombatAI
                 }
                 return;
             case ARCHIMONDE_ACTION_FINGER_OF_DEATH_COOLUP:
+                // Fork (solo): Finger of Death (and its 39314 coolup) is never cast: it fired at the solo player regardless of
+                // melee range and broke the encounter. The action starts disabled; this guards any re-enable.
+                DisableCombatAction(action);
+                return;
                 if (Unit* closest = m_creature->SelectAttackingTarget(ATTACKING_TARGET_NEAREST_BY, 0, nullptr, SELECT_FLAG_PLAYER))
                 {
                     if (!m_creature->CanReachWithMeleeAttack(closest))
@@ -316,6 +320,9 @@ struct boss_archimondeAI : public CombatAI
                 }
                 return;
             case ARCHIMONDE_ACTION_FINGER_OF_DEATH:
+                // Fork (solo): disabled, see FINGER_OF_DEATH_COOLUP
+                SetActionReadyStatus(action, false);
+                return;
                 if (Unit* closest = m_creature->SelectAttackingTarget(ATTACKING_TARGET_NEAREST_BY, 0, nullptr, SELECT_FLAG_PLAYER))
                 {
                     if (!m_creature->CanReachWithMeleeAttack(closest))

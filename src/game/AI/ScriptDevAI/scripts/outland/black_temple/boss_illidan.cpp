@@ -25,6 +25,7 @@ EndScriptData */
 #include "black_temple.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
 #include "AI/ScriptDevAI/base/escort_ai.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 // #define FAST_TIMERS
 // #define NO_SHADOWFIEND
@@ -2079,9 +2080,13 @@ struct npc_flame_of_azzinothAI : public CombatAI
 ## npc_shadow_demon
 ######*/
 
+// Fork (solo): Consume Soul 41080 is no longer an instakill but a 3 s cast (visible cast bar) for ~20k shadow
+// (custom-content/SOLO_BLACK_TEMPLE.sql). Kill the demon before the cast lands and its target takes nothing; once it
+// lands the demon is spent and despawns. Solo there is no Paralyze (the player must be able to fight it), and
+// the demons have half health solo, scaling to full at 25 players, so a melee player can kill all four in the window.
 struct npc_shadow_demonAI : public ScriptedAI
 {
-    npc_shadow_demonAI(Creature* creature) : ScriptedAI(creature)
+    npc_shadow_demonAI(Creature* creature) : ScriptedAI(creature), m_reachedTarget(false), m_consumed(false)
     {
         SetReactState(REACT_AGGRESSIVE);
         m_creature->SetCorpseDelay(5);
@@ -2090,6 +2095,8 @@ struct npc_shadow_demonAI : public ScriptedAI
     }
 
     ObjectGuid m_targetGuid;
+    bool m_reachedTarget;                                   // Fork (solo)
+    bool m_consumed;                                        // Fork (solo)
 
     void Reset() override {}
 
@@ -2103,6 +2110,13 @@ struct npc_shadow_demonAI : public ScriptedAI
     {
         ScriptedAI::JustRespawned();
         m_creature->CastSpell(nullptr, SPELL_SHADOW_DEMON_PASSIVE, TRIGGERED_OLD_TRIGGERED);
+        // Fork (solo): half health solo, full at 25 players
+        float healthMod = ScaleByPlayerCount(m_creature->GetMap(), 25, 0.5f, 1.0f);
+        if (healthMod < 1.0f)
+        {
+            m_creature->SetMaxHealth(std::max(1u, uint32(m_creature->GetMaxHealth() * healthMod)));
+            m_creature->SetHealth(m_creature->GetMaxHealth());
+        }
         FindNewTarget();
     }
 
@@ -2114,12 +2128,16 @@ struct npc_shadow_demonAI : public ScriptedAI
 
     void ReceiveAIEvent(AIEventType eventType, Unit* /*sender*/, Unit* /*invoker*/, uint32 /*miscValue*/) override
     {
+        // Fork (solo): starting the Consume Soul cast breaks the Paralyze channel; keep the target while consuming
+        if (m_reachedTarget || m_consumed)
+            return;
         if (eventType == AI_EVENT_CUSTOM_A && m_creature->IsAlive()) // Channel ended for any reason
             m_targetGuid = ObjectGuid(); // find new target on next AI update
     }
 
     void FindNewTarget()
     {
+        m_reachedTarget = false;
         Unit* illidan = m_creature->GetSpawner();
         if (illidan && illidan->GetTypeId() == TYPEID_UNIT)
         {
@@ -2127,7 +2145,9 @@ struct npc_shadow_demonAI : public ScriptedAI
             {
                 // Dummy attack function - used only to set the target
                 AttackStart(target);
-                m_creature->CastSpell(target, SPELL_PARALYZE, TRIGGERED_OLD_TRIGGERED);
+                // Fork (solo): no Paralyze when the map has one player
+                if (GetEncounterPlayerCount(m_creature->GetMap()) > 1)
+                    m_creature->CastSpell(target, SPELL_PARALYZE, TRIGGERED_OLD_TRIGGERED);
 
                 // Move towards target (which is stunned)
                 float x, y, z;
@@ -2149,14 +2169,44 @@ struct npc_shadow_demonAI : public ScriptedAI
             return;
         }
 
+        m_reachedTarget = true;                             // Fork (solo): UpdateAI starts (or retries) the cast
+    }
+
+    void SpellHitTarget(Unit* /*target*/, const SpellEntry* spellInfo) override
+    {
+        // Fork (solo): the soul is consumed (hit or not): free the target and go
+        if (spellInfo->Id != SPELL_CONSUME_SOUL || m_consumed)
+            return;
+
+        m_consumed = true;
         if (Player* player = m_creature->GetMap()->GetPlayer(m_targetGuid))
-            DoCastSpellIfCan(player, SPELL_CONSUME_SOUL); // will find new target on channel interrupt
+            player->RemoveAurasByCasterSpell(SPELL_PARALYZE, m_creature->GetObjectGuid());
+        m_creature->ForcedDespawn(1000);
     }
 
     void UpdateAI(const uint32 /*diff*/) override
     {
+        if (m_consumed)
+            return;
+
         if (!m_targetGuid)
+        {
             FindNewTarget();
+            return;
+        }
+
+        // Fork (solo): at the target, cast Consume Soul (3 s); retried if the cast was interrupted
+        if (m_reachedTarget && !m_creature->IsNonMeleeSpellCasted(false))
+        {
+            Player* player = m_creature->GetMap()->GetPlayer(m_targetGuid);
+            if (!player || !player->IsAlive())
+            {
+                m_targetGuid = ObjectGuid();                // find new target on next AI update
+                m_reachedTarget = false;
+                return;
+            }
+            DoCastSpellIfCan(player, SPELL_CONSUME_SOUL);
+        }
     }
 };
 

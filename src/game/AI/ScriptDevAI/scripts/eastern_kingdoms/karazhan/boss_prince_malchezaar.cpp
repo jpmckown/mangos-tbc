@@ -25,6 +25,7 @@ EndScriptData */
 #include "karazhan.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
 #include "Spells/Scripts/SpellScript.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -302,6 +303,10 @@ struct Enfeeble : public SpellScript, public AuraScript
     bool OnCheckTarget(const Spell* spell, Unit* target, SpellEffectIndex /*eff*/) const override
     {
         if (spell->GetCaster()->GetVictim() == target)
+            return false;
+
+        // Fork (solo): when a pet tanks, never Enfeeble (1 HP, then Shadow Nova) the only player
+        if (target->GetTypeId() == TYPEID_PLAYER && GetEncounterPlayerCount(target->GetMap()) <= 1)
             return false;
 
         return true;

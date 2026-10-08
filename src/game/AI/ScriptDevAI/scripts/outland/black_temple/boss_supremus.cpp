@@ -326,8 +326,10 @@ struct SupremusHatefulStrikePrimer : public SpellScript
                 }
             }
         }
-        if (!target && victim && caster->CanReachWithMeleeAttack(victim))
-            target = victim;
+        // Fork (solo): no fallback to the current victim (retail never Hateful-Strikes the tank); solo this was
+        // 27.75-32.25k physical every 1.2 s on top of the melee. With nobody else in melee the strike is skipped.
+        if (!target)
+            return;
 
         caster->CastSpell(target, SPELL_HATEFUL_STRIKE, TRIGGERED_IGNORE_GCD | TRIGGERED_IGNORE_CURRENT_CASTED_SPELL | TRIGGERED_NORMAL_COMBAT_CAST);
     }

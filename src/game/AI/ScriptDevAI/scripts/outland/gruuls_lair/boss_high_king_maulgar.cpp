@@ -126,6 +126,24 @@ struct boss_high_king_maulgarAI : public CombatAI
             m_instance->SetData(TYPE_MAULGAR_EVENT, IN_PROGRESS);
     }
 
+    void SpellHitTarget(Unit* target, const SpellEntry* spellInfo) override
+    {
+        // Fork (solo): Intimidating Roar's root and fear last 3 s instead of 8 s (long CC rule).
+        // 16508 is shared with old-world creatures, so it is cut here instead of in spell_template.
+        if (spellInfo->Id == SPELL_FEAR)
+        {
+            if (SpellAuraHolder* holder = target->GetSpellAuraHolder(SPELL_FEAR, m_creature->GetObjectGuid()))
+            {
+                if (holder->GetAuraDuration() > 3 * IN_MILLISECONDS)
+                {
+                    holder->SetAuraMaxDuration(3 * IN_MILLISECONDS);
+                    holder->SetAuraDuration(3 * IN_MILLISECONDS);
+                    holder->UpdateAuraDuration();
+                }
+            }
+        }
+    }
+
     void EventCouncilDeath()
     {
         switch (++m_uiCouncilDeathCount)

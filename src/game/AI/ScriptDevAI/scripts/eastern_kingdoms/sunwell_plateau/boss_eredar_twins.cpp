@@ -24,6 +24,7 @@ EndScriptData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "sunwell_plateau.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 #include "Spells/Scripts/SpellScript.h"
 #include <sstream>
 
@@ -168,6 +169,12 @@ struct boss_alythessAI : public CombatAI
         DoCastSpellIfCan(nullptr, SPELL_DARK_FLAME_AURA_ALYTHESS, CAST_AURA_NOT_PRESENT | CAST_TRIGGERED);
 
         m_aggro = m_creature->GetMap()->GetCurrentClockTime();
+
+        // Fork (solo): enrage 6 min at 25 players -> 11.5 min solo, linear by player count.
+        // Each twin 2.88M HP (6070 x 475); the first dies at 1% and the survivor's Empower heals 6M (full), so a solo
+        // player focusing one deals 0.99 x 2.88M + 2.88M = 5.74M: ~1,700 base DPS in 6 min at 85% uptime before the
+        // +1000% blessing. ~1,000 base (x11) needs 614 s; x1.1 = 675 s -> 11.5 min.
+        ResetCombatAction(ALYTHESS_ENRAGE, uint32(ScaleByPlayerCount(m_creature->GetMap(), 25, 11.5f, 6.f) * float(MINUTE * IN_MILLISECONDS)));
     }
 
     void JustPreventedDeath(Unit* /*killer*/) override
@@ -357,6 +364,12 @@ struct boss_sacrolashAI : public CombatAI
         DoCastSpellIfCan(nullptr, SPELL_DARK_FLAME_AURA_ALYTHESS, CAST_AURA_NOT_PRESENT | CAST_TRIGGERED);
 
         m_aggro = m_creature->GetMap()->GetCurrentClockTime();
+
+        // Fork (solo): enrage 6 min at 25 players -> 11.5 min solo, linear by player count.
+        // Each twin 2.88M HP (6070 x 475); the first dies at 1% and the survivor's Empower heals 6M (full), so a solo
+        // player focusing one deals 0.99 x 2.88M + 2.88M = 5.74M: ~1,700 base DPS in 6 min at 85% uptime before the
+        // +1000% blessing. ~1,000 base (x11) needs 614 s; x1.1 = 675 s -> 11.5 min.
+        ResetCombatAction(SACROLASH_ENRAGE, uint32(ScaleByPlayerCount(m_creature->GetMap(), 25, 11.5f, 6.f) * float(MINUTE * IN_MILLISECONDS)));
     }
 
     void JustPreventedDeath(Unit* /*killer*/) override

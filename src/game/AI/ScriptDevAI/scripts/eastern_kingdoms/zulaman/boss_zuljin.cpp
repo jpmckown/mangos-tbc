@@ -24,6 +24,7 @@ EndScriptData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "zulaman.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -178,6 +179,7 @@ struct boss_zuljinAI : public CombatAI
     uint8 m_healthCheck;
 
     uint8 m_lynxRushCount;
+    uint8 m_lynxRushMax;                                    // Fork (solo): charges per Lynx Rush, scaled by player count
 
     GuidVector m_summons;
 
@@ -188,6 +190,7 @@ struct boss_zuljinAI : public CombatAI
         m_phase               = PHASE_TROLL;
 
         m_lynxRushCount       = 0;
+        m_lynxRushMax         = MAX_LYNX_RUSH;
 
         SetEquipmentSlots(true);
 
@@ -248,7 +251,9 @@ struct boss_zuljinAI : public CombatAI
         {
             case NPC_FEATHER_VORTEX:
                 m_summons.push_back(summoned->GetObjectGuid());
-                summoned->CastSpell(nullptr, SPELL_DREAM_FOG, TRIGGERED_OLD_TRIGGERED);
+                // Fork (solo): no Dream Fog. Its 24781 pulse (every 10 s) wipes the vortex's threat and makes it attack
+                // a new random player; the vortexes now wander instead (npc_feather_vortexAI)
+                // summoned->CastSpell(nullptr, SPELL_DREAM_FOG, TRIGGERED_OLD_TRIGGERED);
                 break;
             case NPC_COLUMN_OF_FIRE:
                 summoned->AI()->SetCombatMovement(false);
@@ -308,7 +313,9 @@ struct boss_zuljinAI : public CombatAI
                 DoCastSpellIfCan(nullptr, SPELL_ENERGY_STORM, CAST_TRIGGERED);
 
                 // summon 4 vortexes
-                DoCastSpellIfCan(nullptr, SPELL_SUMMON_CYCLONE, CAST_TRIGGERED);
+                // Fork (solo): 1 vortex solo up to the stock 4 with a full raid (43112 summons its BasePoints count)
+                int32 vortexCount = int32(ScaleByPlayerCount(m_creature->GetMap(), 10, 1.0f, float(MAX_VORTEXES)) + 0.5f);
+                m_creature->CastCustomSpell(nullptr, SPELL_SUMMON_CYCLONE, &vortexCount, nullptr, nullptr, TRIGGERED_OLD_TRIGGERED);
                 m_creature->SetStunned(true);
             }
             HandlePhaseTransition();
@@ -431,7 +438,7 @@ struct boss_zuljinAI : public CombatAI
             case ZULJIN_ACTION_LYNX_RUSH_RE_CHARGE:
             {
                 ++m_lynxRushCount;
-                if (m_lynxRushCount != MAX_LYNX_RUSH)
+                if (m_lynxRushCount < m_lynxRushMax) // Fork (solo): stock m_lynxRushCount != MAX_LYNX_RUSH
                 {
                     SpellCastResult result = m_creature->CastSpell(nullptr, SPELL_LYNX_RUSH, TRIGGERED_IGNORE_COOLDOWNS);
                     if (result != SPELL_CAST_OK)
@@ -477,6 +484,8 @@ struct boss_zuljinAI : public CombatAI
                 if (DoCastSpellIfCan(nullptr, SPELL_LYNX_RUSH) == CAST_OK)
                 {
                     m_lynxRushCount = 0;
+                    // Fork (solo): every charge picks a random player, so alone all 10 hit the same one. 3 charges solo, 10 with a full raid.
+                    m_lynxRushMax = uint8(ScaleByPlayerCount(m_creature->GetMap(), 10, 3.0f, float(MAX_LYNX_RUSH)) + 0.5f);
                     ResetCombatAction(action, urand(20000, 25000));
                 }
                 return;
@@ -501,14 +510,30 @@ struct boss_zuljinAI : public CombatAI
 ## npc_feather_vortex
 ######*/
 
+// Fork (solo): the vortexes no longer chase players; they wander at random over the arena floor as hazards.
+// Their Cyclone pulse (43120 -> 43121, 4 yd) still hits whoever they touch.
+enum
+{
+    VORTEX_ACTION_START     = 1,
+    VORTEX_ACTION_WANDER    = 2,
+    POINT_ID_VORTEX_WANDER  = 1,
+};
+
+static const float aVortexArenaCenter[3] = { 120.172f, 706.444f, 45.11137f };  // fZuljinMoveLoc, centre of the arena floor
+static const float VORTEX_WANDER_RADIUS = 18.0f;                                // the spirits stand about 29 yd out, the fire door 26 yd
+
 struct npc_feather_vortexAI : public ScriptedAI
 {
     npc_feather_vortexAI(Creature* creature) : ScriptedAI(creature), m_instance(static_cast<ScriptedInstance*>(creature->GetInstanceData()))
     {
         SetMeleeEnabled(false);
-        AddCustomAction(1, 1500u, [&]()
+        AddCustomAction(VORTEX_ACTION_START, 1500u, [&]()
         {
             StartAttacking();
+        });
+        AddCustomAction(VORTEX_ACTION_WANDER, true, [&]()
+        {
+            WanderToRandomPoint();
         });
         Reset();
     }
@@ -545,12 +570,29 @@ struct npc_feather_vortexAI : public ScriptedAI
         m_creature->CastSpell(nullptr, SPELL_CYCLONE_PASSIVE, TRIGGERED_OLD_TRIGGERED);
         m_creature->CastSpell(nullptr, SPELL_BALL_OF_ENERGY, TRIGGERED_OLD_TRIGGERED);
         m_creature->SetInCombatWithZone();
-        // Attack random target
-        if (Unit * target = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0, nullptr, SELECT_FLAG_PLAYER))
-        {
-            m_creature->AddThreat(target, 1000000.f);
-            AttackStart(target);
-        }
+        // Fork (solo): no target. A running combat script keeps it from attacking or evading with no victim;
+        // passive and without combat movement nothing else issues a chase. Stock: AttackStart on a random player.
+        SetCombatScriptStatus(true);
+        SetReactState(REACT_PASSIVE);
+        SetCombatMovement(false);
+        WanderToRandomPoint();
+    }
+
+    // Fork (solo): walk to a random point of the arena floor, then pick the next one
+    void WanderToRandomPoint()
+    {
+        float angle = rand_norm_f() * 2 * M_PI_F;
+        float dist = VORTEX_WANDER_RADIUS * sqrt(rand_norm_f());   // uniform over the disc
+        float x = aVortexArenaCenter[0] + dist * cos(angle);
+        float y = aVortexArenaCenter[1] + dist * sin(angle);
+        m_creature->GetMotionMaster()->MovePoint(POINT_ID_VORTEX_WANDER, x, y, aVortexArenaCenter[2], FORCED_MOVEMENT_WALK);
+        ResetTimer(VORTEX_ACTION_WANDER, 15000); // fallback if the point is never reached
+    }
+
+    void MovementInform(uint32 motionType, uint32 pointId) override
+    {
+        if (motionType == POINT_MOTION_TYPE && pointId == POINT_ID_VORTEX_WANDER)
+            ResetTimer(VORTEX_ACTION_WANDER, urand(500, 2000));
     }
 
     void SpellHitTarget(Unit* target, SpellEntry const* spellEntry) override

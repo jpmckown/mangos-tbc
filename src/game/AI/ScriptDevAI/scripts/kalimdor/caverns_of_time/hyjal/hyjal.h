@@ -212,6 +212,7 @@ class instance_mount_hyjal : public ScriptedInstance
         void OverrunBase(BaseArea index);
         void DespawnOverrun(BaseArea index);
         void RestartEvent();
+        bool IsWaveStillAlive() const;                      // Fork (solo)
 
         uint32 m_encounter[MAX_ENCOUNTER];
         std::string m_saveData;

@@ -228,6 +228,7 @@ class instance_sunwell_plateau : public ScriptedInstance, private DialogueHelper
         GuidList m_lAllFlightTriggersList;
         GuidList m_lBackdoorTriggersList;
         std::vector<uint32> m_kiljaedenRespawnDbGuids;
+        void AddKiljaedenRespawnDbGuid(uint32 dbGuid); // Fork (solo)
         GuidVector m_muruTrashGuids;
         GuidVector m_felmystSpawns;
         GuidVector m_gauntletSpawns;

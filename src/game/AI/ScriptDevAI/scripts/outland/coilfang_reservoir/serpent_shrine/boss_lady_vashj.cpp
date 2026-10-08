@@ -25,6 +25,7 @@ EndScriptData */
 #include "serpent_shrine.h"
 #include "Entities/TemporarySpawn.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -111,6 +112,10 @@ enum
     SPELL_REMOVE_TAINTED_CORES  = 39495,
 
     SPELL_VISUAL_KIT            = 6445,
+
+    SPELL_TAINTED_CORE_OPENING  = 3366,                     // Fork (solo): the core's 5 s Opening on a generator, cancelled by any direct damage
+
+    SSC_RAID_SIZE               = 25,                       // Fork (solo): full raid size for player-count scaling
 
     // other
     POINT_MOVE_CENTER           = 1,
@@ -331,7 +336,8 @@ struct boss_lady_vashjAI : public CombatAI
                 summoned->SetInCombatWithZone();
                 if (Unit* target = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0))
                     summoned->AI()->AttackStart(target);
-                summoned->ForcedDespawn(16000, true); // only despawn after 15 seconds if still alive, different rules on death, one second more for appearing
+                // Fork (solo): it spawns on the outer ring ~60 yd from the nearest generator; give a small group time to reach it (45 s solo -> stock 16 s at 25)
+                summoned->ForcedDespawn(uint32(ScaleByPlayerCount(m_creature->GetMap(), SSC_RAID_SIZE, 45000.0f, 16000.0f)), true); // only despawn after 15 seconds if still alive, different rules on death, one second more for appearing
                 summoned->SetCorpseDelay(3600);
                 break;
             case NPC_COILFANG_STRIDER:
@@ -372,7 +378,7 @@ struct boss_lady_vashjAI : public CombatAI
         {
             case NPC_TAINTED_ELEMENTAL:
                 // Set the timer when summoned killed
-                ResetTimer(VASHJ_TAINTED_ELEMENTAL, 50000);
+                ResetTimer(VASHJ_TAINTED_ELEMENTAL, GetTaintedElementalDelay());
                 break;
             case NPC_COILFANG_STRIDER:
                 summoned->RemoveAurasDueToSpell(SPELL_PANIC_PERIODIC);
@@ -387,7 +393,14 @@ struct boss_lady_vashjAI : public CombatAI
     {
         // Set the timer when summoned despawned, if not already killed
         if (summoned->GetEntry() == NPC_TAINTED_ELEMENTAL && m_phase == PHASE_2)
-            ResetIfNotStarted(VASHJ_TAINTED_ELEMENTAL, 50000);
+            ResetIfNotStarted(VASHJ_TAINTED_ELEMENTAL, GetTaintedElementalDelay());
+    }
+
+    // Fork (solo): phase 2 spawns assume a full raid; these scale them with the players in the map (solo value -> stock at 25)
+    uint32 GetTaintedElementalDelay() const
+    {
+        // the next core comes sooner for small groups: 30 s solo -> 50 s
+        return uint32(ScaleByPlayerCount(m_creature->GetMap(), SSC_RAID_SIZE, 30000.0f, 50000.0f));
     }
 
     void KilledUnit(Unit* /*victim*/) override
@@ -488,7 +501,8 @@ struct boss_lady_vashjAI : public CombatAI
         if (Creature* creature = m_creature->GetMap()->GetCreature(m_triggerGuidsAll[pos]))
             m_creature->CastSpell(creature, SPELL_WAVE_B, TRIGGERED_OLD_TRIGGERED);
 
-        ResetTimer(VASHJ_COILFANG_ELITE, 46000);
+        // Fork (solo): every 92 s solo -> 46 s at 25
+        ResetTimer(VASHJ_COILFANG_ELITE, uint32(ScaleByPlayerCount(m_creature->GetMap(), SSC_RAID_SIZE, 92000.0f, 46000.0f)));
     }
 
     void HandleCoilfangStrider()
@@ -497,7 +511,8 @@ struct boss_lady_vashjAI : public CombatAI
         if (Creature* creature = m_creature->GetMap()->GetCreature(m_triggerGuidsAll[pos]))
             m_creature->CastSpell(creature, SPELL_WAVE_C, TRIGGERED_OLD_TRIGGERED);
 
-        ResetTimer(VASHJ_COILFANG_STRIDER, 60000);
+        // Fork (solo): every 120 s solo -> 60 s at 25
+        ResetTimer(VASHJ_COILFANG_STRIDER, uint32(ScaleByPlayerCount(m_creature->GetMap(), SSC_RAID_SIZE, 120000.0f, 60000.0f)));
     }
 
     void HandleSporebat()
@@ -508,18 +523,33 @@ struct boss_lady_vashjAI : public CombatAI
         m_creature->CastSpell(nullptr, batSpells[randSpell], TRIGGERED_OLD_TRIGGERED);
 
         // summon sporebats faster and faster
-        if (m_uiSummonSporebatStaticTimer > 2000)
-            m_uiSummonSporebatStaticTimer -= 2000;
+        // Fork (solo): the speed-up is 1 s per bat down to 10 s solo -> stock 2 s per bat down to 2 s at 25
+        uint32 step = uint32(ScaleByPlayerCount(m_creature->GetMap(), SSC_RAID_SIZE, 1000.0f, 2000.0f));
+        uint32 minTimer = uint32(ScaleByPlayerCount(m_creature->GetMap(), SSC_RAID_SIZE, 10000.0f, 2000.0f));
+        if (m_uiSummonSporebatStaticTimer > minTimer + step)
+            m_uiSummonSporebatStaticTimer -= step;
+        else
+            m_uiSummonSporebatStaticTimer = std::min(m_uiSummonSporebatStaticTimer, minTimer);
 
         ResetTimer(VASHJ_SPOREBAT, m_uiSummonSporebatStaticTimer);
     }
 
     void HandleEnchantedElemental()
     {
-        for (auto& entry : m_triggerGuids)
+        // Fork (solo): one elemental from each of the 4 quadrants every 10 s is too many for one player;
+        // walk in from 1 random quadrant solo -> all 4 at 25 players
+        uint32 count = uint32(ScaleByPlayerCount(m_creature->GetMap(), SSC_RAID_SIZE, 1.0f, float(m_triggerGuids.size())) + 0.5f);
+        std::vector<uint32> quadrants;
+        for (uint32 i = 0; i < m_triggerGuids.size(); ++i)
+            quadrants.push_back(i);
+        std::shuffle(quadrants.begin(), quadrants.end(), *GetRandomGenerator());
+        quadrants.resize(std::min(count, uint32(quadrants.size())));
+
+        for (uint32 quadrant : quadrants)
         {
+            GuidVector const& entry = m_triggerGuids[quadrant];
             if (entry.empty())
-                break;
+                continue;
 
             uint32 rand = urand(0, entry.size() - 1);
             if (Creature* creature = m_creature->GetMap()->GetCreature(entry[rand]))
@@ -639,6 +669,15 @@ struct boss_lady_vashjAI : public CombatAI
             {
                 if (Unit* target = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0, nullptr, SELECT_FLAG_PLAYER))
                 {
+                    // Fork (solo): don't strike a player who is opening a generator with a Tainted Core (any hit cancels the 5 s Opening,
+                    // and solo that player is the only possible target); try again in 1 s
+                    Spell* opening = target->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+                    if (opening && opening->m_spellInfo->Id == SPELL_TAINTED_CORE_OPENING)
+                    {
+                        ResetCombatAction(action, 1000);
+                        return;
+                    }
+
                     if (DoCastSpellIfCan(target, SPELL_FORKED_LIGHTNING) == CAST_OK)
                     {
                         ResetCombatAction(action, urand(3000, 6000));

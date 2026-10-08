@@ -1657,7 +1657,7 @@ void Aura::TriggerSpell()
                     {
                         if (Aura* aura = GetHolder()->m_auras[EFFECT_INDEX_1])
                         {
-                            if (aura->m_modifier.m_amount > -100)
+                            if (aura->m_modifier.m_amount > -50) // Fork (solo): max mana shrink floors at -50% (stock -100%)
                             {
                                 UnitMods unitMod = UnitMods(UNIT_MOD_POWER_START + m_modifier.m_miscvalue);
                                 GetTarget()->HandleStatModifier(unitMod, TOTAL_PCT, float(aura->m_modifier.m_amount), false);

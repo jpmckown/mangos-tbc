@@ -24,6 +24,7 @@ EndScriptData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "sunwell_plateau.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 #include "Spells/Scripts/SpellScript.h"
 #include "Tools/Language.h"
 
@@ -105,7 +106,14 @@ enum KalecgosActions
     KALECGOS_TAIL_LASH,
     KALECGOS_ACTION_MAX,
     KALECGOS_EXIT_TIMER,
+    KALECGOS_BANISHED_BLAST,                        // Fork (solo)
+    KALECGOS_BANISH_WINDOW,                         // Fork (solo)
 };
+
+// Fork (solo): while Kalecgos is banished at 1% and Sathrovarr is still up, the dragon keeps sending players
+// into the Spectral Realm for this long: 10 min solo, scaling to 0 (stock: a banished dragon cannot cast) at 25.
+static const float KALECGOS_SOLO_BANISH_WINDOW_SEC = 600.f;
+static const uint32 KALECGOS_RAID_SIZE = 25;
 
 struct boss_kalecgosAI : public CombatAI
 {
@@ -118,6 +126,8 @@ struct boss_kalecgosAI : public CombatAI
         AddCombatAction(KALECGOS_SPECTRAL_BLAST, 15000, 18000);
         AddCombatAction(KALECGOS_TAIL_LASH, 5000u);
         AddCustomAction(KALECGOS_EXIT_TIMER, true, [&]() { HandleExit(); });
+        AddCustomAction(KALECGOS_BANISHED_BLAST, true, [&]() { HandleBanishedBlast(); });
+        AddCustomAction(KALECGOS_BANISH_WINDOW, true, [&]() { DisableTimer(KALECGOS_BANISHED_BLAST); });
         AddOnKillText(SAY_EVIL_SLAY_1, SAY_EVIL_SLAY_2);
         m_creature->GetCombatManager().SetLeashingCheck([](Unit* /*unit*/, float /*x*/, float y, float /*z*/)
         {
@@ -131,12 +141,58 @@ struct boss_kalecgosAI : public CombatAI
 
     uint32 m_exitStage;
 
+    // Fork (solo): the dragon is waiting for the players in the Spectral Realm instead of failing the encounter
+    bool m_spectralRealmHold = false;
+    bool m_forceEvade = false;
+
     void Reset() override
     {
         CombatAI::Reset();
         SetDeathPrevention(true);
         m_isCorrupted = true;
+        m_spectralRealmHold = false;
+        m_forceEvade = false;
         m_creature->RemoveAurasDueToSpell(SPELL_CRAZED_RAGE);
+    }
+
+    // Fork (solo)
+    bool IsLivingPlayerInSpectralRealm() const
+    {
+        for (auto& playerRef : m_creature->GetMap()->GetPlayers())
+            if (Player* player = playerRef.getSource())
+                if (player->IsAlive() && player->HasAura(SPELL_SPECTRAL_REALM_AURA))
+                    return true;
+        return false;
+    }
+
+    // Fork (solo): 44852 makes the realm players friendly to the dragon and wipes their threat. With nobody left in the
+    // normal realm (solo: always) the dragon used to evade, fail the encounter and despawn. Hold combat instead.
+    void StartSpectralRealmHold()
+    {
+        if (m_spectralRealmHold)
+            return;
+        m_spectralRealmHold = true;
+        SetCombatScriptStatus(true);
+        SetMeleeEnabled(false);
+        m_creature->AttackStop();
+    }
+
+    void EndSpectralRealmHold()
+    {
+        if (!m_spectralRealmHold)
+            return;
+        m_spectralRealmHold = false;
+        SetCombatScriptStatus(false);
+        SetMeleeEnabled(true);
+    }
+
+    void HandleBanishedBlast()
+    {
+        // Fork (solo): a banished (stunned) dragon cannot cast, so without this nobody can reach Sathrovarr any more
+        if (!m_isCorrupted || !m_creature->HasAura(SPELL_BANISH) || !m_instance || m_instance->GetData(TYPE_KALECGOS) != IN_PROGRESS)
+            return;
+        m_creature->CastSpell(nullptr, SPELL_SPECTRAL_BLAST, TRIGGERED_OLD_TRIGGERED);
+        ResetTimer(KALECGOS_BANISHED_BLAST, urand(21000, 26000));
     }
 
     void Aggro(Unit* /*who*/) override
@@ -158,6 +214,16 @@ struct boss_kalecgosAI : public CombatAI
             DoCastSpellIfCan(nullptr, SPELL_BANISH, CAST_TRIGGERED);
             m_creature->RemoveAurasDueToSpell(SPELL_CRAZED_RAGE);
             m_creature->RemoveAurasDueToSpell(SPELL_CRAZED_RAGE_BUFF);
+
+            // Fork (solo): kill window. Stock has no timer, but a banished dragon stops casting Spectral Blast, so
+            // Sathrovarr had to reach 1% before the realm group's current visit ended (solo: never, soft lock).
+            // Keep blasting for a window scaled by player count: 10 min solo -> 0 (stock) at 25 players.
+            float window = ScaleByPlayerCount(m_creature->GetMap(), KALECGOS_RAID_SIZE, KALECGOS_SOLO_BANISH_WINDOW_SEC, 0.f);
+            if (window >= 1.f)
+            {
+                ResetTimer(KALECGOS_BANISHED_BLAST, 2000);
+                ResetTimer(KALECGOS_BANISH_WINDOW, uint32(window * float(IN_MILLISECONDS)));
+            }
         }
         else
             DoStartOutro();
@@ -165,6 +231,16 @@ struct boss_kalecgosAI : public CombatAI
 
     void EnterEvadeMode() override
     {
+        // Fork (solo): don't fail while a living player is still fighting in the Spectral Realm
+        if (!m_forceEvade && m_instance && m_instance->GetData(TYPE_KALECGOS) == IN_PROGRESS && IsLivingPlayerInSpectralRealm())
+        {
+            StartSpectralRealmHold();
+            return;
+        }
+        m_forceEvade = false;
+        EndSpectralRealmHold();
+        DisableTimer(KALECGOS_BANISHED_BLAST);
+
         if (m_instance && m_instance->GetData(TYPE_KALECGOS) != DONE)
         {
             m_instance->DoEjectSpectralPlayers();
@@ -228,7 +304,20 @@ struct boss_kalecgosAI : public CombatAI
                 m_isCorrupted = false;
         }
         else if (eventType == AI_EVENT_CUSTOM_C)
+        {
+            m_forceEvade = true; // Fork (solo): Sathrovarr evaded, this is a real wipe
             EnterEvadeMode();
+        }
+        else if (eventType == AI_EVENT_CUSTOM_D)
+        {
+            // Fork (solo): a player came back from the Spectral Realm while the dragon was holding; re-engage them
+            if (m_spectralRealmHold && pInvoker && pInvoker->IsAlive() && m_instance && m_instance->GetData(TYPE_KALECGOS) == IN_PROGRESS)
+            {
+                m_creature->AddThreat(pInvoker);
+                EndSpectralRealmHold();
+                AttackStart(pInvoker);
+            }
+        }
         else if (eventType == AI_EVENT_CUSTOM_E)
         {
             m_creature->CastSpell(nullptr, SPELL_CURSE_OF_BOUNDLESS_AGONY_REMOVAL, TRIGGERED_OLD_TRIGGERED);
@@ -265,6 +354,25 @@ struct boss_kalecgosAI : public CombatAI
             }
         }
         ++m_exitStage;
+    }
+
+    void UpdateAI(const uint32 diff) override
+    {
+        // Fork (solo): end the hold once someone is back on the threat list (returning player, pet sent in),
+        // or fail the encounter as stock did if every player in the realm died meanwhile.
+        if (m_spectralRealmHold)
+        {
+            if (!m_creature->getThreatManager().isThreatListEmpty())
+                EndSpectralRealmHold();
+            else if (!IsLivingPlayerInSpectralRealm())
+            {
+                m_forceEvade = true;
+                EnterEvadeMode();
+                return;
+            }
+        }
+
+        CombatAI::UpdateAI(diff);
     }
 
     void ExecuteAction(uint32 action) override
@@ -570,7 +678,11 @@ struct SpectralBlast : public SpellScript
         // Cast the spectral realm effect spell, visual spell and spectral blast rift summoning
         unitTarget->CastSpell(nullptr, SPELL_SPECTRAL_BLAST_IMPACT, TRIGGERED_OLD_TRIGGERED);
         spell->GetCaster()->CastSpell(unitTarget, SPELL_SPECTRAL_BLAST_VISUAL, TRIGGERED_OLD_TRIGGERED);
-        spell->GetCaster()->AI()->DoCastSpellIfCan(unitTarget, SPELL_SPECTRAL_REALM, CAST_INTERRUPT_PREVIOUS);
+        // Fork (solo): the banished dragon (stunned) can only cast triggered, see boss_kalecgosAI::HandleBanishedBlast
+        if (spell->GetCaster()->HasAura(SPELL_BANISH))
+            spell->GetCaster()->CastSpell(unitTarget, SPELL_SPECTRAL_REALM, TRIGGERED_OLD_TRIGGERED);
+        else
+            spell->GetCaster()->AI()->DoCastSpellIfCan(unitTarget, SPELL_SPECTRAL_REALM, CAST_INTERRUPT_PREVIOUS);
     }
 };
 
@@ -626,7 +738,15 @@ struct SpectralRealmAura : public AuraScript
             target->CastSpell(nullptr, SPELL_SPECTRAL_EXHAUSTION, TRIGGERED_OLD_TRIGGERED);
 
             if (auto instance = dynamic_cast<instance_sunwell_plateau*>(target->GetInstanceData()))
+            {
                 instance->RemoveFromSpectralRealm(target->GetObjectGuid());
+
+                // Fork (solo): if the dragon is holding the fight for the realm players, have it re-engage this one
+                if (target->IsAlive())
+                    if (Creature* dragon = instance->GetSingleCreatureFromStorage(NPC_KALECGOS_DRAGON))
+                        if (dragon->IsAlive() && dragon->AI())
+                            dragon->AI()->SendAIEvent(AI_EVENT_CUSTOM_D, target, dragon);
+            }
         }
     }
 };

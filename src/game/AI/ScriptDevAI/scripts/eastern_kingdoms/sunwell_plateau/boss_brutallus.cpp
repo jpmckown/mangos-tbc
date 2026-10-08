@@ -24,6 +24,7 @@ EndScriptData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "sunwell_plateau.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 #include "Spells/Scripts/SpellScript.h"
 
 enum
@@ -172,6 +173,11 @@ struct boss_brutallusAI : public CombatAI, private DialogueHelper
 
         if (m_instance)
             m_instance->SetData(TYPE_BRUTALLUS, IN_PROGRESS);
+
+        // Fork (solo): berserk 6 min at 25 players -> 19.5 min solo, linear by player count.
+        // 10.50M HP (7588 x 1384) in 6 min at 90% melee uptime needs ~2,950 base DPS before the +1000% blessing;
+        // 19.5 min lets ~1,000 base DPS (x11 = 11k) win with ~10% margin (10.50M / 9.9k = 1,061 s; x1.1 = 1,167 s).
+        ResetCombatAction(BRUTALLUS_BERSERK, uint32(ScaleByPlayerCount(m_creature->GetMap(), 25, 19.5f, 6.f) * float(MINUTE * IN_MILLISECONDS)));
     }
 
     void JustDied(Unit* /*killer*/) override

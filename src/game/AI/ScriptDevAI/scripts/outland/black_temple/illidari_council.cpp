@@ -25,6 +25,7 @@ EndScriptData */
 #include "black_temple.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
 #include "Spells/Scripts/SpellScript.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -334,6 +335,14 @@ struct boss_illidari_councilAI : public CombatAI
 
             m_instance->SetData(TYPE_COUNCIL, FAIL);
         }
+    }
+
+    // Fork (solo): all four members' damage to players and their pets scales with the player count, 25% of stock
+    // solo to 100% at 25 (the shared-rule damage to the controller is a creature and is left alone)
+    void DamageDeal(Unit* doneTo, uint32& damage, DamageEffectType /*damagetype*/, SpellEntry const* /*spellInfo*/) override
+    {
+        if (doneTo && doneTo->IsPlayerControlled() && damage)
+            damage = std::max(1u, uint32(damage * ScaleByPlayerCount(m_creature->GetMap(), 25, 0.25f, 1.0f)));
     }
 
     void DamageTaken(Unit* /*dealer*/, uint32& damage, DamageEffectType /*damagetype*/, SpellEntry const* /*spellInfo*/) override

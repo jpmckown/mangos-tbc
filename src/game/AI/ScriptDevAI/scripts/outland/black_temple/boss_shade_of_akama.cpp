@@ -24,6 +24,7 @@ EndScriptData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "black_temple.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -268,8 +269,13 @@ struct npc_akamaAI : public CombatAI, private DialogueHelper
             respawnDelay = 5 * MINUTE - 30;
     }
 
-    void DamageTaken(Unit* /*dealer*/, uint32& damage, DamageEffectType /*damagetype*/, SpellEntry const* /*spellInfo*/) override
+    void DamageTaken(Unit* dealer, uint32& damage, DamageEffectType /*damagetype*/, SpellEntry const* /*spellInfo*/) override
     {
+        // Fork (solo): NPC damage to Akama (the Shade, also the Defenders) scales with the player count:
+        // players/25 of stock (1/25 solo), so one player has time to burn the Shade before Akama falls
+        if (dealer && !dealer->IsPlayerControlled() && damage)
+            damage = std::max(1u, uint32(damage * ScaleByPlayerCount(m_creature->GetMap(), 25, 1.0f / 25.0f, 1.0f)));
+
         if (damage >= m_creature->GetHealth())
         {
             damage = 0;

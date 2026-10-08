@@ -24,6 +24,7 @@ EndScriptData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "black_temple.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -156,6 +157,23 @@ struct boss_najentusAI : public CombatAI
             mapRef.getSource()->DestroyItemCount(ITEM_IMPALING_SPINE, 5, true);
     }
 
+    // Fork (solo): spines normally come only from Impaling Spine on a non-tank player. When the shield goes up and
+    // nobody can be impaled (solo, or no player besides the tank), hand every living player a spine to throw
+    // (Hurl Spine 39948 has NO_IMMUNITIES; SpellHit above pops the shield and re-enables both spine actions).
+    void GiveSpinesIfNoneCanBeImpaled()
+    {
+        if (GetEncounterPlayerCount(m_creature->GetMap()) > 1 &&
+            m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0, SPELL_IMPALING_SPINE, SELECT_FLAG_PLAYER | SELECT_FLAG_SKIP_TANK))
+            return;
+
+        for (auto const& mapRef : m_creature->GetMap()->GetPlayers())
+        {
+            Player* player = mapRef.getSource();
+            if (player && player->IsAlive() && !player->IsGameMaster() && !player->HasItemCount(ITEM_IMPALING_SPINE, 1))
+                player->CastSpell(player, SPELL_CREATE_NAJENTUS_SPINE, TRIGGERED_OLD_TRIGGERED);
+        }
+    }
+
     void ExecuteAction(uint32 action) override
     {
         switch (action)
@@ -166,6 +184,7 @@ struct boss_najentusAI : public CombatAI
                     DisableCombatAction(NAJENTUS_ACTION_IMPALING_SPINE);
                     DisableCombatAction(NAJENTUS_ACTION_NEEDLE_SPINE);
                     ResetCombatAction(action, GetSubsequentActionTimer(NajentusActions(action)));
+                    GiveSpinesIfNoneCanBeImpaled();
                 }
                 return;
             case NAJENTUS_ACTION_ENRAGE:
@@ -177,6 +196,12 @@ struct boss_najentusAI : public CombatAI
                 return;
             case NAJENTUS_ACTION_IMPALING_SPINE:
             {
+                // Fork (solo): never impale the only player (a pet holds aggro): a 30 s stun nobody can free them from
+                if (GetEncounterPlayerCount(m_creature->GetMap()) <= 1)
+                {
+                    ResetCombatAction(action, GetSubsequentActionTimer(NajentusActions(action)));
+                    return;
+                }
                 if (Unit* target = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0, SPELL_IMPALING_SPINE, SELECT_FLAG_PLAYER | SELECT_FLAG_SKIP_TANK))
                 {
                     if (DoCastSpellIfCan(target, SPELL_IMPALING_SPINE) == CAST_OK)

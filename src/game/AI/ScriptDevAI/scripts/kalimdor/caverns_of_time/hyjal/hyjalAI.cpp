@@ -23,6 +23,7 @@ EndScriptData */
 
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "hyjalAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 struct HyjalYells
 {
@@ -221,4 +222,14 @@ void hyjalAI::Retreat()
 void hyjalAI::JustDied(Unit* /*killer*/)
 {
     DoTalk(DEATH);
+}
+
+// Fork (solo): the waves are tuned for 25 defenders. Jaina and Thrall take 24% damage solo (the 25-man blessing's -76%),
+// scaling back to stock with a full raid, so a small group isn't failed by the leader dying while it fights elsewhere.
+void hyjalAI::DamageTaken(Unit* dealer, uint32& damage, DamageEffectType damageType, SpellEntry const* spellInfo)
+{
+    if (m_creature->GetEntry() == NPC_JAINA || m_creature->GetEntry() == NPC_THRALL)
+        damage = uint32(damage * ScaleByPlayerCount(m_creature->GetMap(), 25, 0.24f, 1.0f));
+
+    CombatAI::DamageTaken(dealer, damage, damageType, spellInfo);
 }

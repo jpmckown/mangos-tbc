@@ -25,6 +25,19 @@ EndScriptData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "karazhan.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
+
+// Fork (solo): Romulo and Julianne's phase 3 revive window, 60 s solo scaling to the stock 10 s with 10 players
+// If the partner is already down, both die right away instead of at the end of the window.
+static uint32 GetOperaResurrectWindow(Creature const* self, ScriptedInstance* instance, uint32 partnerEntry)
+{
+    if (instance)
+        if (Creature* partner = instance->GetSingleCreatureFromStorage(partnerEntry))
+            if (partner->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_UNINTERACTIBLE))
+                return 1;
+
+    return uint32(ScaleByPlayerCount(self->GetMap(), 10, 60000.0f, 10000.0f));
+}
 
 /***********************************/
 /*** OPERA WIZARD OF OZ EVENT *****/
@@ -683,7 +696,7 @@ struct boss_julianneAI : public CombatAI
             // set fake death and allow 10 sec timer to kill Romulos
             DoBroadcastText(SAY_JULIANNE_DEATH02, m_creature);
             DoSetFakeDeath();
-            ResetTimer(JULIANNE_RESURECT_SELF, 10000);
+            ResetTimer(JULIANNE_RESURECT_SELF, GetOperaResurrectWindow(m_creature, m_instance, NPC_ROMULO)); // Fork (solo): was 10000
         }
     }
 
@@ -860,7 +873,7 @@ struct boss_romuloAI : public CombatAI
         {
             // set fake death and allow 10 sec timer to kill Julianne
             DoSetFakeDeath();
-            ResetTimer(ROMULO_RESURECT_SELF, 10000);
+            ResetTimer(ROMULO_RESURECT_SELF, GetOperaResurrectWindow(m_creature, m_instance, NPC_JULIANNE)); // Fork (solo): was 10000
         }
     }
 

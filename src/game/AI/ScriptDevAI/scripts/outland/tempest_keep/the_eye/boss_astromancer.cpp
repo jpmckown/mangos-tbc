@@ -24,6 +24,7 @@ EndScriptData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "the_eye.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 #include "Spells/Scripts/SpellScript.h"
 
 enum
@@ -79,6 +80,11 @@ enum
 
     MAX_SPOTLIGHTS                      = 3,
     MAX_AGENTS                          = 4,
+
+    // Fork (solo): split phase add counts scale with the players in the instance
+    SOLO_RAID_SIZE                      = 25,
+    AGENTS_PER_SPOTLIGHT                = 5,            // 33362 summons 5 (BasePoints 4 + 1)
+    MAX_PRIESTS                         = 2,
 };
 
 // Spells used to summon the Spotlights on 2.4.3 - Astromancer Split
@@ -242,9 +248,14 @@ struct boss_high_astromancer_solarianAI : public CombatAI
 
     void HandleSplitAgents()
     {
+        // Fork (solo): 3 agents in all (1 per spotlight) solo, up to the stock 15 (5 per spotlight) with 25 players, spread evenly over the spotlights
+        uint32 totalAgents = uint32(ScaleByPlayerCount(m_creature->GetMap(), SOLO_RAID_SIZE, float(MAX_SPOTLIGHTS), float(MAX_SPOTLIGHTS * AGENTS_PER_SPOTLIGHT)) + 0.5f);
         for (uint8 i = 0; i < MAX_SPOTLIGHTS; ++i)
+        {
+            int32 agents = int32(totalAgents / MAX_SPOTLIGHTS + (i < totalAgents % MAX_SPOTLIGHTS ? 1 : 0));
             if (Creature* spotlight = m_creature->GetMap()->GetCreature(m_vSpotLightsGuidVector[i]))
-                spotlight->CastSpell(nullptr, SPELL_ASTROMANCER_ADDS, TRIGGERED_OLD_TRIGGERED, nullptr, nullptr, m_creature->GetObjectGuid());
+                spotlight->CastCustomSpell(nullptr, SPELL_ASTROMANCER_ADDS, &agents, nullptr, nullptr, TRIGGERED_OLD_TRIGGERED, nullptr, nullptr, m_creature->GetObjectGuid());
+        }
 
         ResetTimer(SOLARIAN_SPLIT_PRIESTS, 16000);
     }
@@ -255,7 +266,9 @@ struct boss_high_astromancer_solarianAI : public CombatAI
         // Randomize the portals
         std::shuffle(m_vSpotLightsGuidVector.begin(), m_vSpotLightsGuidVector.end(), *GetRandomGenerator());
         // Summon 2 priests
-        for (uint8 i = 0; i < 2; ++i)
+        // Fork (solo): 1 priest below 13 players, the stock 2 from 13 on
+        uint32 priests = uint32(ScaleByPlayerCount(m_creature->GetMap(), SOLO_RAID_SIZE, 1.0f, float(MAX_PRIESTS)) + 0.5f);
+        for (uint8 i = 0; i < priests; ++i)
             if (Creature* spotlight = m_creature->GetMap()->GetCreature(m_vSpotLightsGuidVector[i]))
                 spotlight->CastSpell(nullptr, SPELL_ASTROMANCER_PRIEST, TRIGGERED_OLD_TRIGGERED, nullptr, nullptr, m_creature->GetObjectGuid());
         // Teleport the boss at the last portal
@@ -319,6 +332,13 @@ struct boss_high_astromancer_solarianAI : public CombatAI
             }
             case SOLARIAN_WRATH_OF_THE_ASTROMANCER:
             {
+                // Fork (solo): not with one player. Position 1 skips the top-threat target, so a lone player never got it,
+                // but with a pet tanking the player did, and the explosion hit the tanking pet and knocked the player up
+                if (GetEncounterPlayerCount(m_creature->GetMap()) <= 1)
+                {
+                    ResetCombatAction(action, urand(12000, 18000));
+                    break;
+                }
 #ifdef PRENERF_2_0_3
                 if (Unit* target = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 1, SPELL_WOTA_MAIN_CAST, SELECT_FLAG_PLAYER))
                     if (DoCastSpellIfCan(target, SPELL_WOTA_MAIN_CAST) == CAST_OK)

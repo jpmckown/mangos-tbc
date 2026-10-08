@@ -151,10 +151,10 @@ void instance_sunwell_plateau::OnCreatureCreate(Creature* creature)
         case NPC_ANVEENA:
         case NPC_ANVEENA_MARKER:
             m_npcEntryGuidStore[creature->GetEntry()] = creature->GetObjectGuid();
-            m_kiljaedenRespawnDbGuids.push_back(creature->GetDbGuid());
+            AddKiljaedenRespawnDbGuid(creature->GetDbGuid()); // Fork (solo): no duplicates, see FailKiljaeden
             break;
         case NPC_HAND_OF_THE_DECEIVER:
-            m_kiljaedenRespawnDbGuids.push_back(creature->GetDbGuid());
+            AddKiljaedenRespawnDbGuid(creature->GetDbGuid()); // Fork (solo)
             creature->SetCorpseDelay(30);
             creature->GetCombatManager().SetLeashingCheck([](Unit*, float, float, float z) { return z > 58.f; });
             break;
@@ -685,8 +685,16 @@ void instance_sunwell_plateau::FailKiljaeden()
         kalec->ForcedDespawn();
 
     // Respawn deceivers
+    // Fork (solo): keep the list. These spawns use the old spawning system, so a respawn reuses the same Creature
+    // and OnCreatureCreate never refills it: after one fail (a deceiver evading counts) the next fail respawned
+    // nothing, the deceivers stayed dead and Kil'jaeden could not be summoned again until a server restart.
     RespawnDbGuids(m_kiljaedenRespawnDbGuids, 30);
-    m_kiljaedenRespawnDbGuids.clear();
+}
+
+void instance_sunwell_plateau::AddKiljaedenRespawnDbGuid(uint32 dbGuid)
+{
+    if (std::find(m_kiljaedenRespawnDbGuids.begin(), m_kiljaedenRespawnDbGuids.end(), dbGuid) == m_kiljaedenRespawnDbGuids.end())
+        m_kiljaedenRespawnDbGuids.push_back(dbGuid);
 }
 
 void instance_sunwell_plateau::ImpYell()

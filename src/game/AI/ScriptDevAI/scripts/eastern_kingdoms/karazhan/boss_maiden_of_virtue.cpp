@@ -24,6 +24,8 @@ EndScriptData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "karazhan.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "Spells/Scripts/SpellScript.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -93,10 +95,25 @@ struct boss_maiden_of_virtueAI : public CombatAI
     }
 };
 
+// Fork (solo): 29511 Repentance skips Maiden's victim when it is a player (Spell.cpp), so it only reaches a solo player when a pet tanks.
+// Then the player's 12 s incapacitate becomes 3 s (long-CC rule), so the pet is not left without its owner for 12 s.
+struct MaidenRepentance : public AuraScript
+{
+    int32 OnDurationCalculate(WorldObject const* /*caster*/, Unit const* target, int32 duration) const override
+    {
+        if (target && target->GetTypeId() == TYPEID_PLAYER && GetEncounterPlayerCount(target->GetMap()) <= 1)
+            return std::min(duration, 3000);
+
+        return duration;
+    }
+};
+
 void AddSC_boss_maiden_of_virtue()
 {
     Script* pNewScript = new Script;
     pNewScript->Name = "boss_maiden_of_virtue";
     pNewScript->GetAI = &GetNewAIInstance<boss_maiden_of_virtueAI>;
     pNewScript->RegisterSelf();
+
+    RegisterSpellScript<MaidenRepentance>("spell_maiden_repentance");
 }

@@ -7506,6 +7506,11 @@ uint32 Unit::SpellDamageBonusDone(Unit* victim, SpellSchoolMask schoolMask, Spel
     if (spellInfo->HasAttribute(SPELL_ATTR_EX3_IGNORE_CASTER_MODIFIERS))
         return pdamage;
 
+    // Fork: damage a player is made to deal to itself (Flame Wreath, Mark of Kazzak, reflected spells, Seal of Blood backlash)
+    // is not multiplied by its own done-bonuses, i.e. the instance blessing's +damage
+    if (victim == this && GetTypeId() == TYPEID_PLAYER)
+        return pdamage;
+
     // For totems get damage bonus from owner (statue isn't totem in fact)
     if (GetTypeId() == TYPEID_UNIT && ((Creature*)this)->IsTotem() && ((Totem*)this)->GetTotemType() != TOTEM_STATUE)
     {
@@ -7932,6 +7937,10 @@ uint32 Unit::MeleeDamageBonusDone(Unit* victim, uint32 pdamage, WeaponAttackType
 
     // Some spells don't benefit from done mods
     if (spellInfo && spellInfo->HasAttribute(SPELL_ATTR_EX3_IGNORE_CASTER_MODIFIERS))
+        return pdamage;
+
+    // Fork: same rule for physical damage a player deals to itself (Moroes's Garrote bleed)
+    if (victim == this && GetTypeId() == TYPEID_PLAYER)
         return pdamage;
 
     // differentiate for weapon damage based spells

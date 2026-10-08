@@ -25,6 +25,7 @@ EndScriptData */
 #include "serpent_shrine.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
 #include "Spells/Scripts/SpellScript.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -303,7 +304,8 @@ struct boss_the_lurker_belowAI : public CombatAI
 bool GOUse_go_strange_pool(Player* /*player*/, GameObject* go)
 {
     // There is some chance to fish The Lurker Below, sources are from 20s to 10minutes, average 5min => 20 tries, hence 5%
-    if (urand(0, 99) < 10)
+    // Fork (solo): the stock 10% assumes up to 25 people fishing at once; scale it with the players in the map, 100% solo -> 10% at 25
+    if (roll_chance_f(ScaleByPlayerCount(go->GetMap(), 25, 100.0f, 10.0f)))
     {
         if (ScriptedInstance* pInstance = (ScriptedInstance*)go->GetInstanceData())
         {

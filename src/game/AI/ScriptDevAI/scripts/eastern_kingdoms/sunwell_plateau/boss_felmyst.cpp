@@ -25,6 +25,7 @@ EndScriptData */
 #include "sunwell_plateau.h"
 #include "Entities/TemporarySpawn.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 #include "Spells/Scripts/SpellScript.h"
 
 enum
@@ -259,6 +260,12 @@ struct boss_felmystAI : public CombatAI
         if (m_instance)
             m_instance->SetData(TYPE_FELMYST, IN_PROGRESS);
 
+        // Fork (solo): with fewer than 10 players she never takes off (see FELMYST_PHASE_CHANGE), so the berserk only has
+        // to cover ground time. 7.00M HP (6070 x 1154) at ~1,000 base DPS (x11 with the 25-man blessing) and 85% uptime
+        // is 749 s; x1.1 = 824 s -> 14 min solo, linear to the stock 10 min at 25 players. (With air phases a solo player
+        // would have needed 36 min: she is out of reach ~100 s of every 160 s cycle.)
+        ResetCombatAction(FELMYST_BERSERK, uint32(ScaleByPlayerCount(m_creature->GetMap(), 25, 14.f, 10.f) * float(MINUTE * IN_MILLISECONDS)));
+
         if (!who) // should never happen but just a safeguard
             m_creature->GetMotionMaster()->MovePoint(POINT_AGGRO, 1483.703f, 623.2387f, 28.17801f, FORCED_MOVEMENT_RUN, false);
         else
@@ -472,6 +479,13 @@ struct boss_felmystAI : public CombatAI
             {
                 if (!CanExecuteCombatAction() || !m_creature->IsSpellReady(SPELL_ENCAPSULATE_CHANNEL))
                     return;
+
+                // Fork (solo): no air phases below 10 players (Demonic Vapor, the breath passes); she stays on the ground
+                if (GetEncounterPlayerCount(m_creature->GetMap()) < 10)
+                {
+                    DisableCombatAction(action);
+                    return;
+                }
 
                 m_creature->HandleEmote(EMOTE_ONESHOT_LIFTOFF);
 

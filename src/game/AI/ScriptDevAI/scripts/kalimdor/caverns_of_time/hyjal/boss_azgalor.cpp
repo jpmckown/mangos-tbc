@@ -18,6 +18,7 @@
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "hyjal.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -139,6 +140,12 @@ struct boss_azgalorAI : public CombatAI
             }
             case AZGALOR_DOOM:
             {
+                // Fork (solo): Doom skips his victim, so alone it only lands when a pet tanks, and then it kills the only player (instakill)
+                if (GetEncounterPlayerCount(m_creature->GetMap()) <= 1)
+                {
+                    ResetCombatAction(action, GetSubsequentActionTimer(action));
+                    break;
+                }
                 if (DoCastSpellIfCan(nullptr, SPELL_DOOM) == CAST_OK)
                     ResetCombatAction(action, GetSubsequentActionTimer(action));
                 break;

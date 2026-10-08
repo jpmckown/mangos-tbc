@@ -24,6 +24,7 @@ EndScriptData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "black_temple.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -383,7 +384,10 @@ struct boss_essence_of_sufferingAI : public essence_base_AI
     void Aggro(Unit* /*enemy*/) override
     {
         DoScriptText(SUFF_SAY_FREED, m_creature);
-        DoCastSpellIfCan(nullptr, SPELL_AURA_OF_SUFFERING, CAST_TRIGGERED);
+        // Fork (solo): the healing and health-regen cut scales with the player count, -50% solo to -100% at 25
+        // (the area aura hands its custom amount on to every target)
+        int32 sufferingPct = -int32(ScaleByPlayerCount(m_creature->GetMap(), 25, 50.0f, 100.0f) + 0.5f);
+        m_creature->CastCustomSpell(nullptr, SPELL_AURA_OF_SUFFERING, &sufferingPct, &sufferingPct, nullptr, TRIGGERED_OLD_TRIGGERED);
         DoCastSpellIfCan(nullptr, SPELL_SUFFERING_PASSIVE, CAST_TRIGGERED);
     }
 
@@ -455,7 +459,7 @@ struct boss_essence_of_desireAI : public essence_base_AI
         {
             case DESIRE_ACTION_RUNE_SHIELD: return 15000;
             case DESIRE_ACTION_DEADEN: return 30000;
-            case DESIRE_ACTION_SPIRIT_SHOCK: return 2000; // chain cast during tbc
+            case DESIRE_ACTION_SPIRIT_SHOCK: return urand(12000, 15000); // Fork (solo): was 2000 ("chain cast during tbc"), a permanent confuse
             default: return 0;
         }
     }
@@ -473,7 +477,9 @@ struct boss_essence_of_desireAI : public essence_base_AI
 
     void DamageTaken(Unit* dealer, uint32& damage, DamageEffectType damagetype, SpellEntry const* spellInfo) override
     {
-        int32 damageTaken = ((int32)damage) / 2;
+        // Fork (solo): the reflected share scales with the player count, a tenth solo (below the 5% leech after
+        // the blessing's -76%) to the stock half at 25
+        int32 damageTaken = int32(damage * ScaleByPlayerCount(m_creature->GetMap(), 25, 0.1f, 0.5f));
         if (dealer)
             dealer->CastCustomSpell(dealer, SPELL_AURA_OF_DESIRE_SELF_DMG, &damageTaken, nullptr, nullptr, TRIGGERED_OLD_TRIGGERED);
         ScriptedAI::DamageTaken(dealer, damage, damagetype, spellInfo);

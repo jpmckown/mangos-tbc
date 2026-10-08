@@ -17,6 +17,7 @@
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "hyjal.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 #include "Spells/Scripts/SpellScript.h"
 
 enum
@@ -168,6 +169,12 @@ struct boss_anetheronAI : public CombatAI
             }
             case ANETHERON_ACTION_SLEEP:
             {
+                // Fork (solo): Sleep skips his victim, so alone it only ever lands when a pet tanks: then it would sleep the only player
+                if (GetEncounterPlayerCount(m_creature->GetMap()) <= 1)
+                {
+                    ResetCombatAction(action, GetSubsequentActionTimer(action));
+                    break;
+                }
                 if (DoCastSpellIfCan(nullptr, SPELL_SLEEP) == CAST_OK)
                 {
                     DoScriptText(urand(0, 1) ? SAY_SLEEP1 : SAY_SLEEP2, m_creature);

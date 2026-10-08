@@ -23,6 +23,7 @@ EndScriptData */
 
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "karazhan.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -197,6 +198,10 @@ enum
     // misc
     TARGET_TYPE_RANDOM              = 1,
     TARGET_TYPE_FRIENDLY            = 2,
+
+    // Fork (solo): below this many players the players' uncontrolled pieces move and fight on their own
+    CHESS_AUTO_PIECES_MAX_PLAYERS   = 5,
+    CHESS_RAID_SIZE                 = 10,
 };
 
 /*######
@@ -214,10 +219,18 @@ struct npc_echo_of_medivhAI : public ScriptedAI
     instance_karazhan* m_pInstance;
 
     uint32 m_uiCheatTimer;
+    bool m_bCheatTimerArmed;
 
     void Reset() override
     {
         m_uiCheatTimer = 90000;
+        m_bCheatTimerArmed = false;
+    }
+
+    // Fork (solo): Medivh cheats every 180 s solo, scaling to the stock 90 s with 10 players
+    uint32 GetCheatTimer() const
+    {
+        return uint32(ScaleByPlayerCount(m_creature->GetMap(), CHESS_RAID_SIZE, 180000.0f, 90000.0f));
     }
 
     void MoveInLineOfSight(Unit* /*pWho*/) override { }
@@ -232,7 +245,17 @@ struct npc_echo_of_medivhAI : public ScriptedAI
     void UpdateAI(const uint32 uiDiff) override
     {
         if (!m_pInstance || m_pInstance->GetData(TYPE_CHESS) != IN_PROGRESS)
+        {
+            m_bCheatTimerArmed = false;
             return;
+        }
+
+        // Fork (solo): (re)start the cheat timer when a game starts, from the player count at that time
+        if (!m_bCheatTimerArmed)
+        {
+            m_uiCheatTimer = GetCheatTimer();
+            m_bCheatTimerArmed = true;
+        }
 
         if (m_uiCheatTimer < uiDiff)
         {
@@ -247,7 +270,7 @@ struct npc_echo_of_medivhAI : public ScriptedAI
             }
 
             DoScriptText(EMOTE_CHEAT, m_creature);
-            m_uiCheatTimer = 90000;
+            m_uiCheatTimer = GetCheatTimer();
         }
         else
             m_uiCheatTimer -= uiDiff;
@@ -449,7 +472,66 @@ struct npc_chess_piece_genericAI : public Scripted_NoMovementAI
         if (vTargets.empty())
             return nullptr;
 
+        // Fork (solo): the players' self-running pieces pick their target instead of a random one
+        if (IsSoloAutoPiece())
+            return SelectBestTarget(vTargets, uiType == TARGET_TYPE_FRIENDLY);
+
         return vTargets[urand(0, vTargets.size() - 1)];
+    }
+
+    // Fork (solo): is this one of the players' pieces that nobody controls, in a game with few players
+    bool IsSoloAutoPiece() const
+    {
+        if (!m_pInstance || m_pInstance->GetData(TYPE_CHESS) != IN_PROGRESS)
+            return false;
+
+        uint32 playerSideFaction = m_pInstance->GetPlayerTeam() == ALLIANCE ? FACTION_ID_CHESS_ALLIANCE : FACTION_ID_CHESS_HORDE;
+        if (m_creature->GetFaction() != playerSideFaction || m_creature->HasAura(SPELL_CONTROL_PIECE) || m_creature->HasCharmer())
+            return false;
+
+        return GetEncounterPlayerCount(m_creature->GetMap()) < CHESS_AUTO_PIECES_MAX_PLAYERS;
+    }
+
+    static bool IsKingPiece(Creature const* piece)
+    {
+        return piece->GetEntry() == NPC_KING_LLANE || piece->GetEntry() == NPC_WARCHIEF_BLACKHAND;
+    }
+
+    // Fork (solo): chess value of a piece, for target priority
+    static uint32 GetPieceValue(Creature const* piece)
+    {
+        switch (piece->GetEntry())
+        {
+            case NPC_KING_LLANE:
+            case NPC_WARCHIEF_BLACKHAND:        return 100;
+            case NPC_HUMAN_CONJURER:
+            case NPC_ORC_WARLOCK:               return 9;
+            case NPC_CONJURED_WATER_ELEMENTAL:
+            case NPC_SUMMONED_DAEMON:           return 5;
+            case NPC_HUMAN_CLERIC:
+            case NPC_ORC_NECROLYTE:             return 4;   // healers: a little above the knights
+            case NPC_HUMAN_CHARGER:
+            case NPC_ORC_WOLF:                  return 3;
+            default:                            return 1;   // pawns
+        }
+    }
+
+    // Fork (solo): enemies: the most valuable one, then the most damaged; heals: the most damaged friend, the king first
+    static Creature* SelectBestTarget(std::vector<Creature*> const& targets, bool friendly)
+    {
+        Creature* best = nullptr;
+        float bestScore = 0.0f;
+        for (Creature* target : targets)
+        {
+            float missing = 100.0f - target->GetHealthPercent();
+            float score = friendly ? missing + (IsKingPiece(target) ? 25.0f : 0.0f) : GetPieceValue(target) * 100.0f + missing;
+            if (!best || score > bestScore)
+            {
+                best = target;
+                bestScore = score;
+            }
+        }
+        return best;
     }
 
     // Function to get a square as close as possible to the enemy
@@ -508,7 +590,31 @@ struct npc_chess_piece_genericAI : public Scripted_NoMovementAI
 
         // Sort the enemies by distance and the squares compared to the distance to the closest enemy
         lEnemies.sort(ObjectDistanceOrder(m_creature));
-        lSquaresList.sort(ObjectDistanceOrder(lEnemies.front()));
+        Creature* goal = lEnemies.front();
+
+        // Fork (solo): the players' self-running pieces go for the enemy closest to their own king when one is near it
+        if (IsSoloAutoPiece())
+        {
+            uint32 kingEntry = m_pInstance->GetPlayerTeam() == ALLIANCE ? NPC_KING_LLANE : NPC_WARCHIEF_BLACKHAND;
+            GuidList lFriendList;
+            m_pInstance->GetChessPiecesByFaction(lFriendList, m_creature->GetFaction());
+            for (ObjectGuid const& guid : lFriendList)
+            {
+                Creature* king = m_creature->GetMap()->GetCreature(guid);
+                if (!king || !king->IsAlive() || king->GetEntry() != kingEntry)
+                    continue;
+
+                Creature* threat = nullptr;
+                for (Creature* enemy : lEnemies)
+                    if (enemy->IsWithinDist(king, 15.0f) && (!threat || king->GetDistance(enemy) < king->GetDistance(threat)))
+                        threat = enemy;
+                if (threat)
+                    goal = threat;
+                break;
+            }
+        }
+
+        lSquaresList.sort(ObjectDistanceOrder(goal));
 
         return lSquaresList.front();
     }
@@ -521,15 +627,28 @@ struct npc_chess_piece_genericAI : public Scripted_NoMovementAI
         if (!m_pInstance || (m_pInstance->GetData(TYPE_CHESS) != IN_PROGRESS && m_pInstance->GetData(TYPE_CHESS) != SPECIAL))
             return;
 
+        // Fork (solo): with few players, the players' uncontrolled pieces (including ones a player has left) act on their own
+        bool soloAutoPiece = IsSoloAutoPiece();
+        if (soloAutoPiece)
+        {
+            if (!m_uiMoveCommandTimer)
+                m_uiMoveCommandTimer = 1000;
+            if (!m_uiSpellCommandTimer)
+                m_uiSpellCommandTimer = 1000;
+        }
+
         // issue move command
         if (m_uiMoveCommandTimer)
         {
             if (m_uiMoveCommandTimer <= uiDiff)
             {
                 // just update facing if some enemy is near
-                if (Unit* pTarget = GetTargetByType(TARGET_TYPE_RANDOM, 5.0f))
+                // Fork (solo): self-running pieces turn to an adjacent enemy on any side, not only in front
+                // (just under 2 pi: HasInArc normalizes a full 2 pi arc to 0)
+                if (Unit* pTarget = GetTargetByType(TARGET_TYPE_RANDOM, 5.0f, soloAutoPiece ? 2 * M_PI_F - 0.01f : M_PI_F))
                     DoCastSpellIfCan(pTarget, SPELL_CHANGE_FACING);
-                else
+                // Fork (solo): a self-running king stays on its square
+                else if (!soloAutoPiece || !IsKingPiece(m_creature))
                 {
                     // the npc doesn't have a 100% chance to move; also there should be some GCD check in core for this part
                     if (roll_chance_i(15))

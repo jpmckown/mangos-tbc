@@ -78,7 +78,8 @@ enum
 
     // Priest
     SPELL_PR_HEAL               = 41372,
-    // SPELL_PR_MIND_BLAST         = 41374, - unconfirmed
+    SPELL_PR_FLASH_HEAL         = 43575,                    // Fork (solo): Alyson Antille's Flash Heal, used for the stolen priest heal
+    SPELL_PR_MIND_BLAST         = 41374,                    // unconfirmed; Fork (solo): replaces the stolen Mind Control
     // SPELL_PR_SW_DEATH           = 41375, - unconfirmed
     SPELL_PR_PSYCHIC_SCREAM     = 43432,
     SPELL_PR_MIND_CONTROL       = 43550,
@@ -168,8 +169,10 @@ static PlayerAbilityStruct aMalacrassStolenAbility[][4] =
     },
     {
         // 5 priest
-        {SPELL_PR_MIND_CONTROL,     TARGET_TYPE_SELF,     11000, 12000},
-        {SPELL_PR_HEAL,             TARGET_TYPE_FRIENDLY, 10000, 12000},
+        // Fork (solo): stock Mind Control 43550 (TARGET_TYPE_SELF) charmed the only player -> Mind Blast;
+        // stock Heal 41372 (also Illidari Archon's in Black Temple) -> ZA-only Flash Heal 43575, cut to a tenth in SOLO_ZULAMAN.sql
+        {SPELL_PR_MIND_BLAST,       TARGET_TYPE_RANDOM,   11000, 12000},
+        {SPELL_PR_FLASH_HEAL,       TARGET_TYPE_FRIENDLY, 10000, 12000},
         {SPELL_PR_PSYCHIC_SCREAM,   TARGET_TYPE_RANDOM,   12000, 12000}
     },
     {

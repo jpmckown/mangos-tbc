@@ -26,6 +26,8 @@ EndScriptData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "karazhan.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "Spells/Scripts/SpellScript.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -69,6 +71,7 @@ enum IllhoofActions
     ILLHOOF_ACTION_SUMMON_KILREK,
     ILLHOOF_ACTION_SUMMON,
     ILLHOOF_ACTION_BERSERK,
+    ILLHOOF_ACTION_SUMMON_IMPS,
     ILLHOOF_ACTION_MAX,
 };
 
@@ -79,6 +82,7 @@ struct boss_terestianAI : public CombatAI
         AddCustomAction(ILLHOOF_ACTION_BERSERK, uint32(10 * MINUTE * IN_MILLISECONDS), [&]() { HandleBerserk(); }, TIMER_COMBAT_COMBAT);
         AddCustomAction(ILLHOOF_ACTION_SUMMON_KILREK, true, [&]() { HandleSummonKilrek(); });
         AddCustomAction(ILLHOOF_ACTION_SUMMON, 10000u, [&]() { HandleSummonPortal(); }, TIMER_COMBAT_COMBAT);
+        AddCustomAction(ILLHOOF_ACTION_SUMMON_IMPS, true, [&]() { HandleSummonImps(); }, TIMER_COMBAT_COMBAT);
         AddOnKillText(SAY_SLAY1, SAY_SLAY2);
     }
 
@@ -89,12 +93,31 @@ struct boss_terestianAI : public CombatAI
     ObjectGuid m_chainsGuid;
     
     bool m_bSummonedPortals;
+    GuidVector m_portalGuids;
 
     void Reset() override
     {
         CombatAI::Reset();
 
         m_bSummonedPortals = false;
+        m_portalGuids.clear();
+    }
+
+    // Fork (solo): the Fiendish Portals' imp timer (was EventAI 1726502, every 5 s per portal) is driven from here,
+    // every 20 s solo scaling to the stock 5 s with 10 players
+    uint32 GetImpTimer() const
+    {
+        return uint32(ScaleByPlayerCount(m_creature->GetMap(), 10, 20000.0f, 5000.0f));
+    }
+
+    void HandleSummonImps()
+    {
+        for (ObjectGuid const& guid : m_portalGuids)
+            if (Creature* portal = m_creature->GetMap()->GetCreature(guid))
+                if (portal->IsAlive())
+                    portal->CastSpell(portal, SPELL_SUMMON_FIENDISH_IMP, TRIGGERED_OLD_TRIGGERED);
+
+        ResetTimer(ILLHOOF_ACTION_SUMMON_IMPS, GetImpTimer());
     }
 
     uint32 GetSubsequentActionTimer(uint32 id)
@@ -172,6 +195,10 @@ struct boss_terestianAI : public CombatAI
             case NPC_PORTAL:
                 if (m_creature->IsInCombat())
                     summoned->SetInCombatWithZone();
+                // Fork (solo): start the imp timer with the first portal
+                if (m_portalGuids.empty())
+                    ResetTimer(ILLHOOF_ACTION_SUMMON_IMPS, GetImpTimer());
+                m_portalGuids.push_back(summoned->GetObjectGuid());
                 if (!m_bSummonedPortals)
                 {
                     m_bSummonedPortals = true;
@@ -240,6 +267,19 @@ struct Sacrifice : public AuraScript
     }
 };
 
+// Fork (solo): 30053 Amplify Flames (Kil'rek): +500 fire damage taken per hit, +125 solo scaling to the stock value with 10 players
+struct AmplifyFlamesKilrek : public AuraScript
+{
+    int32 OnAuraValueCalculate(AuraCalcData& data, int32 value) const override
+    {
+        WorldObject const* source = data.target ? static_cast<WorldObject const*>(data.target) : static_cast<WorldObject const*>(data.caster);
+        if (!source)
+            return value;
+
+        return int32(value * ScaleByPlayerCount(source->GetMap(), 10, 0.25f, 1.0f));
+    }
+};
+
 void AddSC_boss_terestian_illhoof()
 {
     Script* pNewScript = new Script;
@@ -248,4 +288,5 @@ void AddSC_boss_terestian_illhoof()
     pNewScript->RegisterSelf();
 
     RegisterSpellScript<Sacrifice>("spell_sacrifice");
+    RegisterSpellScript<AmplifyFlamesKilrek>("spell_amplify_flames_kilrek");
 }

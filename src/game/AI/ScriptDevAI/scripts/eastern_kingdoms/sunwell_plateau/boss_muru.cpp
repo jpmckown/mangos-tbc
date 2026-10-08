@@ -25,6 +25,7 @@ EndScriptData */
 #include "sunwell_plateau.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
 #include "Spells/Scripts/SpellScript.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -431,7 +432,9 @@ struct npc_portal_targetAI : public ScriptedAI
         {
             // Init sentinel summon timer
             case SPELL_OPEN_PORTAL:
-                m_uiSentinelTimer = 5000;
+                // Fork (solo): half the portals bring a Void Sentinel solo (one every ~60 s instead of 30 s) -> every portal at 25
+                if (RollByPlayerCount(m_creature->GetMap(), 25, 0.5f))
+                    m_uiSentinelTimer = 5000;
                 break;
         }
     }
@@ -577,7 +580,9 @@ struct DarkFiendAI : public CombatAI
         SetCombatMovement(false);
         SetMeleeEnabled(false);
         SetReactState(REACT_PASSIVE);
-        SetDeathPrevention(true);
+        // Fork (solo): fiends die to damage (4k HP) without exploding, as on retail. Stock made them unkillable,
+        // so only an offensive dispel (priest/shaman/mage/felhunter) or reaching the target ended them.
+        SetDeathPrevention(false);
     }
 
     ObjectGuid m_target;
@@ -650,14 +655,17 @@ struct DarkFiendDummy : public SpellScript
 void SummonElves(Unit* target)
 {
     // summon 2 berserkers and 1 fury mage on each side
-    for (uint8 i = 0; i < 2; i++)
-    {
-        target->CastSpell(nullptr, SPELL_SUMMON_BERSERKER_1, TRIGGERED_OLD_TRIGGERED);
-        target->CastSpell(nullptr, SPELL_SUMMON_BERSERKER_2, TRIGGERED_OLD_TRIGGERED);
-    }
+    // Fork (solo): the wave scales with the player count, 1 berserker + 1 fury mage solo (on random sides)
+    // -> the stock 4 + 2 at 25 players
+    uint32 berserkers = uint32(ScaleByPlayerCount(target->GetMap(), 25, 1.f, 4.f) + 0.5f);
+    uint32 mages = uint32(ScaleByPlayerCount(target->GetMap(), 25, 1.f, 2.f) + 0.5f);
+    uint32 side = urand(0, 1);
+    for (uint32 i = 0; i < berserkers; ++i)
+        target->CastSpell(nullptr, (i + side) % 2 ? SPELL_SUMMON_BERSERKER_2 : SPELL_SUMMON_BERSERKER_1, TRIGGERED_OLD_TRIGGERED);
 
-    target->CastSpell(nullptr, SPELL_SUMMON_FURY_MAGE_1, TRIGGERED_OLD_TRIGGERED);
-    target->CastSpell(nullptr, SPELL_SUMMON_FURY_MAGE_2, TRIGGERED_OLD_TRIGGERED);
+    side = urand(0, 1);
+    for (uint32 i = 0; i < mages; ++i)
+        target->CastSpell(nullptr, (i + side) % 2 ? SPELL_SUMMON_FURY_MAGE_2 : SPELL_SUMMON_FURY_MAGE_1, TRIGGERED_OLD_TRIGGERED);
 
     target->AI()->SendAIEvent(AI_EVENT_CUSTOM_B, target, target);
 }

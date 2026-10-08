@@ -24,6 +24,7 @@ EndScriptData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "black_temple.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -84,7 +85,8 @@ struct boss_shahrazAI : public CombatAI
         AddTimerlessCombatAction(SHAHRAZ_ACTION_FRENZY, true);
         AddCombatAction(SHAHRAZ_ACTION_FATAL_ATTRACTION, GetInitialActionTimer(SHAHRAZ_ACTION_FATAL_ATTRACTION));
         AddCombatAction(SHAHRAZ_ACTION_BEAM, GetInitialActionTimer(SHAHRAZ_ACTION_BEAM));
-        AddCombatAction(SHAHRAZ_ACTION_SHRIEK, GetInitialActionTimer(SHAHRAZ_ACTION_SHRIEK));
+        // Fork (solo): no Silencing Shriek (10 s AoE silence every 30 s; the user's call: removed)
+        // AddCombatAction(SHAHRAZ_ACTION_SHRIEK, GetInitialActionTimer(SHAHRAZ_ACTION_SHRIEK));
         AddCombatAction(SHAHRAZ_ACTION_PRISMATIC_SHIELD, GetInitialActionTimer(SHAHRAZ_ACTION_PRISMATIC_SHIELD));
         AddOnKillText(SAY_SLAY_1, SAY_SLAY_2);
     }
@@ -200,6 +202,10 @@ struct boss_shahrazAI : public CombatAI
             case SHAHRAZ_ACTION_FATAL_ATTRACTION:
             {
                 if (m_creature->getThreatManager().getThreatList().size() < 3)
+                    return;
+                // Fork (solo): never with one player (pets/guardians can fill the threat list): it would only ever
+                // pull the one player and blow them up
+                if (GetEncounterPlayerCount(m_creature->GetMap()) <= 1)
                     return;
                 if (DoCastSpellIfCan(nullptr, SPELL_FATAL_ATTRACTION) == CAST_OK)
                 {

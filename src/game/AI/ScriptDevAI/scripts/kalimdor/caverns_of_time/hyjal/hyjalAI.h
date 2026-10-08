@@ -80,6 +80,9 @@ struct hyjalAI : public CombatAI
 
         void JustDied(Unit* /*killer*/) override;
 
+        // Fork (solo): Jaina and Thrall take less damage in small groups (the event fails if they die)
+        void DamageTaken(Unit* dealer, uint32& damage, DamageEffectType damageType, SpellEntry const* spellInfo) override;
+
         void ReceiveAIEvent(AIEventType /*eventType*/, Unit* /*sender*/, Unit* /*invoker*/, uint32 /*miscValue*/) override;
 
         void ExecuteAction(uint32 action) override;
