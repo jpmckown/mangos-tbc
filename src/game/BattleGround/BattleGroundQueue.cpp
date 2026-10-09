@@ -1027,6 +1027,9 @@ void BattleGroundQueueItem::Update(BattleGroundQueue& queue, BattleGroundTypeId 
             bgInfo.bracketId = bracketId;
             bgInfo.instanceId = sMapMgr.GenerateInstanceId();
             bgInfo.m_clientInstanceId = queue.CreateClientVisibleInstanceId(bgTypeId, bracketId);
+            // Fork: a skirmish needs its arena type too (the template's is NONE). Without it the invite and the
+            // leave resolve to BATTLEGROUND_QUEUE_NONE and every participant keeps its 2v2/3v3/5v5 queue slot
+            bgInfo.arenaType = arenaType;
 
             // invite those selection pools
             for (uint8 i = 0; i < PVP_TEAM_COUNT; ++i)
@@ -1035,10 +1038,10 @@ void BattleGroundQueueItem::Update(BattleGroundQueue& queue, BattleGroundTypeId 
 
             queue.AddBgToFreeSlots(bgInfo);
 
-            sWorld.GetMessager().AddMessage([instanceId = bgInfo.instanceId, clientInstanceId = bgInfo.m_clientInstanceId, bgTypeId, bracketId, allianceCount = bgInfo.GetInvitedCount(ALLIANCE), hordeCount = bgInfo.GetInvitedCount(HORDE)](World* /*world*/)
+            sWorld.GetMessager().AddMessage([instanceId = bgInfo.instanceId, clientInstanceId = bgInfo.m_clientInstanceId, bgTypeId, bracketId, arenaType, allianceCount = bgInfo.GetInvitedCount(ALLIANCE), hordeCount = bgInfo.GetInvitedCount(HORDE)](World* /*world*/)
             {
                 // create new battleground
-                BattleGround* bg2 = sBattleGroundMgr.CreateNewBattleGround(bgTypeId, bracketId, ARENA_TYPE_NONE, false, instanceId, clientInstanceId);
+                BattleGround* bg2 = sBattleGroundMgr.CreateNewBattleGround(bgTypeId, bracketId, arenaType, false, instanceId, clientInstanceId);
                 MANGOS_ASSERT(bg2);
                 bg2->SetInvitedCount(ALLIANCE, allianceCount);
                 bg2->SetInvitedCount(HORDE, hordeCount);
