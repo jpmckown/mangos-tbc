@@ -344,25 +344,30 @@ enum
     SPELL_SEAL_OF_BLOOD_SELF_DAMAGE         = 32221,
 
     SPELL_JUDGEMENT_OF_BLOOD                = 31898,
-    SPELL_JUDGEMENT_OF_BLOOD_SELF_DAMAGE    = 32220
+    SPELL_JUDGEMENT_OF_BLOOD_SELF_DAMAGE    = 32220,
+    SPELL_SEAL_OF_BLOOD                     = 31892,
 };
 
 // 31893 - Seal of Blood
+// custom (paladin project, 2026-10-09): the backlash is the seal's effect 2 (the tooltip's $s2%, 5% here; stock 10%)
 struct SealOfBloodSelfDamage : public SpellScript
 {
     void OnAfterHit(Spell* spell) const override
     {
-        int32 damagePoint = spell->GetTotalTargetDamage() * 10 / 100;
+        Aura const* seal = spell->GetCaster()->GetAura(SPELL_SEAL_OF_BLOOD, EFFECT_INDEX_1);
+        int32 pct = seal ? seal->GetModifier()->m_amount : 10;
+        int32 damagePoint = spell->GetTotalTargetDamage() * pct / 100;
         spell->GetCaster()->CastCustomSpell(nullptr, SPELL_SEAL_OF_BLOOD_SELF_DAMAGE, &damagePoint, nullptr, nullptr, TRIGGERED_OLD_TRIGGERED);
     }
 };
 
 // 31898 - Judgement of Blood
+// custom (paladin project, 2026-10-09): 10% backlash (stock 33%); Righteous Judgement doubles the damage, and the backlash with it
 struct JudgementOfBloodSelfDamage : public SpellScript
 {
     void OnAfterHit(Spell* spell) const override
     {
-        int32 damagePoint = spell->GetTotalTargetDamage() * 33 / 100;
+        int32 damagePoint = spell->GetTotalTargetDamage() * 10 / 100;
         spell->GetCaster()->CastCustomSpell(nullptr, SPELL_JUDGEMENT_OF_BLOOD_SELF_DAMAGE, &damagePoint, nullptr, nullptr, TRIGGERED_OLD_TRIGGERED);
     }
 };
