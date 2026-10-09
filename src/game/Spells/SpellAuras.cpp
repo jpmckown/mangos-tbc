@@ -2934,8 +2934,8 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                 case 20307:                                 // rank 5
                 case 20308:                                 // rank 6
                 case 27158:                                 // rank 7
-                    ApplyPercentModFloatVar(target->m_modAttackBaseDPSPct[BASE_ATTACK], 40, !apply);
-                    target->UpdateDamagePhysical(BASE_ATTACK);
+                    // custom (paladin project): the script's -28.6% main-hand cut (SealOfTheCrusader::OnApply) is the only
+                    // penalty, as in the classic fork; this second base DPS / 1.4 stacked with it to ~51% less per swing
                     return;
             }
             break;

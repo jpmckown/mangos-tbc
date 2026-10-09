@@ -2010,6 +2010,10 @@ uint32 Unit::GetResilienceRatingDamageReduction(uint32 damage, SpellDmgClass dmg
     return 0;
 }
 
+// custom (paladin project, 2026-10-08): Seal of the Crusader is the PvP pressure seal, the offensive partner of Seal of Justice.
+// While it's up, the paladin's white swings can't be dodged, parried or blocked and ignore this much of the target's armor.
+static constexpr float SEAL_OF_THE_CRUSADER_ARMOR_IGNORED_PCT = 25.0f;
+
 // TODO for melee need create structure as in
 void Unit::CalculateMeleeDamage(Unit* pVictim, CalcDamageInfo* calcDamageInfo, WeaponAttackType attackType /*= BASE_ATTACK*/)
 {
@@ -2080,7 +2084,7 @@ void Unit::CalculateMeleeDamage(Unit* pVictim, CalcDamageInfo* calcDamageInfo, W
 
         // Calculate armor reduction
         if (subDamage->damageSchoolMask == SPELL_SCHOOL_MASK_NORMAL)
-            subDamage->damage = CalcArmorReducedDamage(this, calcDamageInfo->target, subDamage->damage);
+            subDamage->damage = CalcArmorReducedDamage(this, calcDamageInfo->target, subDamage->damage, HasSealOfTheCrusader() ? SEAL_OF_THE_CRUSADER_ARMOR_IGNORED_PCT : 0.0f);
 
         calcDamageInfo->totalDamage += subDamage->damage;
     }
@@ -2188,7 +2192,7 @@ void Unit::CalculateMeleeDamage(Unit* pVictim, CalcDamageInfo* calcDamageInfo, W
             calcDamageInfo->HitInfo |= HITINFO_BLOCK;
             calcDamageInfo->TargetState = VICTIMSTATE_NORMAL;
             calcDamageInfo->procEx |= PROC_EX_BLOCK;
-            calcDamageInfo->blockedAmount = calcDamageInfo->target->GetShieldBlockValue();
+            calcDamageInfo->blockedAmount = calcDamageInfo->target->CalculateBlockedAmount(calcDamageInfo->totalDamage);
 
             if (calcDamageInfo->blockedAmount >= calcDamageInfo->totalDamage)
             {
@@ -2490,9 +2494,18 @@ void Unit::HandleEmote(uint32 emote_id)
     }
 }
 
-float Unit::CalcArmorReducedDamage(WorldObject* attacker, Unit* victim, const float damage)
+// custom (paladin project): see SEAL_OF_THE_CRUSADER_ARMOR_IGNORED_PCT
+bool Unit::HasSealOfTheCrusader() const
 {
-    float armor = (float)victim->GetArmor();
+    for (Aura const* aura : GetAurasByType(SPELL_AURA_MOD_ATTACKSPEED))
+        if (aura->GetCasterGuid() == GetObjectGuid() && aura->GetSpellProto()->IsFitToFamily(SPELLFAMILY_PALADIN, uint64(0x0000000000000200)))
+            return true;
+    return false;
+}
+
+float Unit::CalcArmorReducedDamage(WorldObject* attacker, Unit* victim, const float damage, float armorIgnoredPct /*= 0.0f*/)
+{
+    float armor = (float)victim->GetArmor() * (1.0f - armorIgnoredPct / 100.0f); // custom: percent part, see HasSealOfTheCrusader
 
     // Ignore enemy armor by armor penetration
     if (attacker->IsUnit())
@@ -2753,7 +2766,7 @@ void Unit::CalculateAbsorbResistBlock(Unit* caster, SpellNonMeleeDamage* spellDa
 {
     if (RollAbilityPartialBlockOutcome(caster, attType, spellProto))
     {
-        spellDamageInfo->blocked = std::min(GetShieldBlockValue(), spellDamageInfo->damage);
+        spellDamageInfo->blocked = std::min(CalculateBlockedAmount(spellDamageInfo->damage), spellDamageInfo->damage);
         spellDamageInfo->damage -= spellDamageInfo->blocked;
     }
 
@@ -2884,7 +2897,8 @@ MeleeHitOutcome Unit::RollMeleeOutcomeAgainst(const Unit* pVictim, WeaponAttackT
     }
     else
     {
-        if (pVictim->CanReactInCombat())
+        // custom (paladin project): Seal of the Crusader's white swings can't be dodged, parried or blocked
+        if (pVictim->CanReactInCombat() && !HasSealOfTheCrusader())
         {
             if (pVictim->CanDodgeInCombat(this))
                 die.set(UNIT_COMBAT_DIE_DODGE, pVictim->CalculateEffectiveDodgeChance(this, attType));
@@ -3514,6 +3528,24 @@ float Unit::CalculateEffectiveBlockChance(const Unit* attacker, WeaponAttackType
     // Attacker's SPELL_AURA_MOD_COMBAT_RESULT_CHANCE contribution (or reduction)
     chance += attacker->GetTotalAuraModifierByMiscValue(SPELL_AURA_MOD_COMBAT_RESULT_CHANCE, VICTIMSTATE_BLOCKS);
     return std::max(0.0f, std::min(chance, 100.0f));
+}
+
+// custom (paladin project, classic fork's design): Shield Specialization's effect 2 makes a block also stop that percent of
+// the damage that gets past the block value
+uint32 Unit::CalculateBlockedAmount(uint32 damage) const
+{
+    uint32 blocked = GetShieldBlockValue();
+    if (damage <= blocked)
+        return blocked;
+    for (uint32 rank : { 20150, 20149, 20148 }) // Shield Specialization ranks 3, 2, 1
+    {
+        if (Aura const* spec = GetAura(rank, EFFECT_INDEX_1))
+        {
+            blocked += (damage - blocked) * spec->GetModifier()->m_amount / 100;
+            break;
+        }
+    }
+    return blocked;
 }
 
 float Unit::CalculateEffectiveCrushChance(const Unit* victim, WeaponAttackType attType) const

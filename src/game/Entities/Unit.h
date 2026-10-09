@@ -1627,6 +1627,7 @@ class Unit : public WorldObject
         float CalculateSpellResistChance(const Unit* victim, SpellSchoolMask schoolMask, const SpellEntry* spell) const;
 
         virtual uint32 GetShieldBlockValue() const = 0;
+        uint32 CalculateBlockedAmount(uint32 damage) const; // custom: block value plus Shield Specialization's share of the rest
         uint32 GetUnitMeleeSkill(Unit const* target = nullptr) const { return (target ? GetLevelForTarget(target) : GetLevel()) * 5; }
         uint32 GetDefenseSkillValue(Unit const* target = nullptr) const;
         uint32 GetWeaponSkillValue(WeaponAttackType attType, Unit const* target = nullptr) const;
@@ -2299,7 +2300,8 @@ class Unit : public WorldObject
         virtual bool IsImmuneToSpellEffect(SpellEntry const* spellInfo, SpellEffectIndex index, bool castOnSelf) const;
         bool IsImmuneToSchool(SpellEntry const* spellInfo, uint8 effectMask) const;
 
-        static float CalcArmorReducedDamage(WorldObject* attacker, Unit* victim, const float damage);
+        static float CalcArmorReducedDamage(WorldObject* attacker, Unit* victim, const float damage, float armorIgnoredPct = 0.0f);
+        bool HasSealOfTheCrusader() const; // custom: its white swings are unavoidable and ignore part of the armor
         void CalculateDamageAbsorbAndResist(Unit* caster, SpellSchoolMask schoolMask, DamageEffectType damagetype, const uint32 damage, uint32* absorb, int32* resist, bool canReflect = false, bool canResist = true, bool binary = false);
         void CalculateAbsorbResistBlock(Unit* caster, SpellNonMeleeDamage* spellDamageInfo, SpellEntry const* spellProto, WeaponAttackType attType = BASE_ATTACK);
 
