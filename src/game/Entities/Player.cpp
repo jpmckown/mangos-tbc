@@ -1527,6 +1527,12 @@ void Player::Update(const uint32 diff)
             m_positionStatusUpdateTimer -= diff;
     }
 
+    // Fork: the code above runs outside the delayed-teleport window, so a far teleport from it removes us from the map
+    // mid-update (seen twice: dead bots repopping to a graveyard on another map, then MANGOS_ASSERT(m_currMap) in
+    // GetZoneAndAreaId). Everything below needs the map; the next update returns early anyway.
+    if (!IsInWorld())
+        return;
+
     if (m_zoneUpdateTimer > 0)
     {
         if (diff >= m_zoneUpdateTimer)
