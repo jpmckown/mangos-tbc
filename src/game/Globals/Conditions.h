@@ -80,6 +80,7 @@ enum ConditionType
     CONDITION_UNUSED_7              = 41,
     CONDITION_WORLDSTATE            = 42,                   // value1: worldstateId; value2: sign; value3: otherOperand - example, 10000; =; 0 - true when 10000 is zero
     CONDITION_IS_IN_COMBAT          = 43,                   // value1: 0 - in combat, 1 - out of combat, target unit
+    CONDITION_MAP_DIFFICULTY        = 44,                   // value1: difficulty (0 normal, 1 heroic) of the map - Fork: normal vs heroic 5-man instance blessings
 };
 
 enum ConditionFlags

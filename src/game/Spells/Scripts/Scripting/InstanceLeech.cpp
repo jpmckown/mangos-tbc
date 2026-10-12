@@ -17,8 +17,34 @@ enum LeechSpells
 // Every bound UnitScript runs on every damage event, so each script instance must only react to
 // its own aura. Binding one instance to several spell_scripts rows (or several instances to the same
 // aura) would heal once per binding.
+//
+// The AuraScript half scales the blessing's in-combat health regen with max health. Effect 3 is
+// SPELL_AURA_MOD_HEALTH_REGEN_IN_COMBAT, which Player::RegenerateHealth adds as flat health per second:
+// a flat 100 out-healed whole low-level dungeon packs and was noise at 70. Its value is now hundredths
+// of a percent of max health per second (25 = 0.25%/s, about the old 100 on a blessed level 70).
 template <uint32 AuraId>
-struct InstanceLeechOnDamageHealing : public UnitScript {
+struct InstanceLeechOnDamageHealing : public UnitScript, public AuraScript {
+    static int32 CalculateRegen(Unit const* target, SpellEntry const* spellProto) {
+        return int32(uint64(target->GetMaxHealth()) * spellProto->CalculateSimpleValue(EFFECT_INDEX_2) / 10000);
+    }
+
+    int32 OnAuraValueCalculate(AuraCalcData& data, int32 value) const override {
+        if (data.effIdx != EFFECT_INDEX_2 || !data.target) return value;
+        return CalculateRegen(data.target, data.spellProto);
+    }
+
+    // effect 1's max health bonus is applied by now, so the first value already counts it
+    void OnApply(Aura* aura, bool apply) const override {
+        if (apply && aura->GetEffIndex() == EFFECT_INDEX_2)
+            aura->GetModifier()->m_amount = CalculateRegen(aura->GetTarget(), aura->GetSpellProto());
+    }
+
+    // follows max health changes (level, gear, buffs); the aura has no apply handler to redo
+    void OnHeartbeat(Aura* aura) const override {
+        if (aura->GetEffIndex() == EFFECT_INDEX_2)
+            aura->GetModifier()->m_amount = CalculateRegen(aura->GetTarget(), aura->GetSpellProto());
+    }
+
     void OnDealDamage(Unit* attacker, Unit* victim, uint32 damage) const override {
         if (attacker == nullptr) return; // attacker should not be null?
         if (attacker == victim) return; // no leech from self-damage (Hellfire, Seal/Judgement of Blood backlash etc.)

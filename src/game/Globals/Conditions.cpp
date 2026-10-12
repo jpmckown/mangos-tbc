@@ -102,6 +102,7 @@ uint8 const ConditionTargetsInternal[] =
     CONDITION_REQ_NONE,               //  41
     CONDITION_REQ_NONE,               //  42
     CONDITION_REQ_TARGET_UNIT,        //  43
+    CONDITION_REQ_MAP_OR_WORLDOBJECT, //  44
 };
 
 // Starts from 4th element so that -3 will return first element.
@@ -501,6 +502,12 @@ bool inline ConditionEntry::Evaluate(WorldObject const* target, Map const* map, 
             }
 
             return static_cast<Unit const*>(target)->IsInCombat() != bool(m_value1);
+        }
+        case CONDITION_MAP_DIFFICULTY:
+        {
+            if (!map)
+                map = source ? source->GetMap() : target->GetMap();
+            return map->GetDifficulty() == Difficulty(m_value1);
         }
         default:
             break;
@@ -978,6 +985,13 @@ bool ConditionEntry::IsValid() const
             if (m_value1 > 1)
             {
                 sLog.outErrorDb("Worldstate condition (entry %u, type %u) has invalid is in combat state %u. Skipping.", m_entry, m_condition, m_value1);
+                return false;
+            }
+            break;
+        case CONDITION_MAP_DIFFICULTY:
+            if (m_value1 >= MAX_DIFFICULTY)
+            {
+                sLog.outErrorDb("Map difficulty condition (entry %u, type %u) has invalid difficulty %u. Skipping.", m_entry, m_condition, m_value1);
                 return false;
             }
             break;
