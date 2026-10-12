@@ -581,6 +581,23 @@ struct ShattrathFlasks : public AuraScript
     }
 };
 
+// Fork: 55072 Flask of Purity, 55074 Flask of Sacred Purity: can't be drunk in a battleground or arena, nor by a bot;
+// an active flask goes dormant in battlegrounds and arenas (Unit::IsImmuneToDispellableDebuffs)
+struct FlaskOfPurity : public SpellScript
+{
+    SpellCastResult OnCheckCast(Spell* spell, bool /*strict*/) const override
+    {
+        Unit* caster = spell->GetCaster();
+        if (!caster || !caster->IsPlayer())
+            return SPELL_CAST_OK;
+        if (!static_cast<Player*>(caster)->isRealPlayer())
+            return SPELL_FAILED_BAD_TARGETS;
+        if (caster->IsInWorld() && caster->GetMap()->IsBattleGroundOrArena())
+            return SPELL_FAILED_NOT_HERE;
+        return SPELL_CAST_OK;
+    }
+};
+
 void AddSC_item_scripts()
 {
     Script* pNewScript = new Script;
@@ -625,4 +642,5 @@ void AddSC_item_scripts()
     RegisterSpellScript<Area52Transporter>("spell_area52_transporter");
     RegisterSpellScript<LinkensBoomerang>("spell_linkens_boomerang");
     RegisterSpellScript<ShattrathFlasks>("spell_shattrath_flasks");
+    RegisterSpellScript<FlaskOfPurity>("spell_flask_of_purity");
 }
