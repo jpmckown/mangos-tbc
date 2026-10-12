@@ -771,8 +771,15 @@ enum
     NPC_GUARD_PATROLLER         = 1976,
     NPC_GUARD_ONYXIA            = 12739,
 
+    // Fork (leveling gaps): Marshal Edric Harrowgate (custom NPC in the keep) joins the fight against Onyxia's guards
+    NPC_HARROWGATE              = 64000,
+    SAY_HARROWGATE_CHARGE       = 631000,   // By the Light! I knew there was treachery in this keep! Stormwind, to the Highlord!
+    SAY_HARROWGATE_WINDSOR      = 631001,   // Windsor... you were right. You were right all along. Rest now, Marshal. The kingdom will remember.
+
     MAX_ROYAL_GUARDS            = 6,
 };
+
+static const float aHarrowgateStandLoc[3] = { -8450.6f, 339.9f, 121.33f };     // Fork: beside the kneeling Bolvar
 
 static const float aGuardLocations[MAX_ROYAL_GUARDS][4] =
 {
@@ -878,6 +885,7 @@ struct npc_reginald_windsorAI : public npc_escortAI, private DialogueHelper
 
     ObjectGuid m_playerGuid;
     ObjectGuid m_guardsGuid[MAX_ROYAL_GUARDS];
+    ObjectGuid m_harrowgateGuid;                            // Fork
 
     GuidList m_lRoyalGuardsGuidList;
 
@@ -1123,6 +1131,7 @@ struct npc_reginald_windsorAI : public npc_escortAI, private DialogueHelper
                     }
                 }
                 m_guardCheckTimer = 1000;
+                DoHarrowgateCharge();
                 break;
             case SPELL_WINDSOR_DEATH:
                 if (Creature* onyxia = m_scriptedMap->GetSingleCreatureFromStorage(NPC_PRESTOR))
@@ -1166,6 +1175,15 @@ struct npc_reginald_windsorAI : public npc_escortAI, private DialogueHelper
                     bolvar->SetWalk(true);
                     bolvar->GetMotionMaster()->MovePoint(0, aMoveLocations[8][0], aMoveLocations[8][1], aMoveLocations[8][2]);
                 }
+                if (Creature* harrowgate = m_creature->GetMap()->GetCreature(m_harrowgateGuid))     // Fork
+                {
+                    if (harrowgate->IsAlive() && !harrowgate->IsInCombat())
+                    {
+                        harrowgate->SetWalk(true);
+                        harrowgate->GetMotionMaster()->Clear();
+                        harrowgate->GetMotionMaster()->MovePoint(0, aHarrowgateStandLoc[0], aHarrowgateStandLoc[1], aHarrowgateStandLoc[2]);
+                    }
+                }
                 break;
             case SAY_BOLVAR_KEEP_15:
                 if (Creature* bolvar = m_scriptedMap->GetSingleCreatureFromStorage(NPC_BOLVAR))
@@ -1173,6 +1191,15 @@ struct npc_reginald_windsorAI : public npc_escortAI, private DialogueHelper
 
                 DoScriptText(SAY_WINDSOR_KEEP_16, m_creature);
                 DoScriptText(EMOTE_WINDSOR_DIE, m_creature);
+
+                if (Creature* harrowgate = m_creature->GetMap()->GetCreature(m_harrowgateGuid))     // Fork
+                {
+                    if (harrowgate->IsAlive())
+                    {
+                        harrowgate->SetFacingToObject(m_creature);
+                        DoBroadcastText(SAY_HARROWGATE_WINDSOR, harrowgate);
+                    }
+                }
 
                 if (Player* player = m_creature->GetMap()->GetPlayer(m_playerGuid))
                     player->RewardPlayerAndGroupAtEventExplored(QUEST_THE_GREAT_MASQUERADE, m_creature);
@@ -1194,6 +1221,18 @@ struct npc_reginald_windsorAI : public npc_escortAI, private DialogueHelper
                     wrynn->SetWalk(true);
                     wrynn->GetMotionMaster()->MoveTargetedHome();
                 }
+                // Fork: send Harrowgate back to his post in the keep
+                if (Creature* harrowgate = m_creature->GetMap()->GetCreature(m_harrowgateGuid))
+                {
+                    harrowgate->ClearTemporaryFaction();
+                    if (harrowgate->IsAlive() && !harrowgate->IsInCombat())
+                    {
+                        harrowgate->SetWalk(true);
+                        harrowgate->GetMotionMaster()->Clear();
+                        harrowgate->GetMotionMaster()->MoveTargetedHome();
+                    }
+                }
+                m_harrowgateGuid.Clear();
                 // Onyxia will respawn by herself in about 30 min, so just reset flags
                 if (Creature* onyxia = m_scriptedMap->GetSingleCreatureFromStorage(NPC_PRESTOR))
                     onyxia->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
@@ -1202,6 +1241,31 @@ struct npc_reginald_windsorAI : public npc_escortAI, private DialogueHelper
                 m_creature->ForcedDespawn(1);
                 break;
         }
+    }
+
+    // Fork (leveling gaps): Marshal Harrowgate (custom NPC 64000) hears the fighting in the throne room and runs in to stand with Bolvar
+    void DoHarrowgateCharge()
+    {
+        Creature* harrowgate = GetClosestCreatureWithEntry(m_creature, NPC_HARROWGATE, 150.0f);
+        if (!harrowgate)
+            return;
+
+        m_harrowgateGuid = harrowgate->GetObjectGuid();
+        DoBroadcastText(SAY_HARROWGATE_CHARGE, harrowgate);
+        harrowgate->SetFactionTemporary(11, TEMPFACTION_RESTORE_REACH_HOME);   // same as Bolvar, so he can fight Onyxia's guards
+        harrowgate->SetWalk(false);
+
+        Creature* target = nullptr;
+        for (ObjectGuid const& guid : m_lRoyalGuardsGuidList)
+        {
+            Creature* guard = m_creature->GetMap()->GetCreature(guid);
+            if (!guard || !guard->IsAlive() || guard->GetEntry() != NPC_GUARD_ONYXIA)
+                continue;
+            if (!target || harrowgate->GetDistance(guard) < harrowgate->GetDistance(target))
+                target = guard;
+        }
+        if (target && harrowgate->AI())
+            harrowgate->AI()->AttackStart(target);
     }
 
     void DoStartKeepEvent()
