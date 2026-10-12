@@ -327,6 +327,15 @@ AccountData = 0
 #        Default: "Server.log"
 #                 "" - Empty name disable creating log file
 #
+#    LogArchiveDir
+#        At startup, move each non-empty log left over from the previous run into this directory
+#        (relative to LogsDir, created if missing) as Logname_YYYY-MM-DD_HH-MM-SS.Ext, stamped with its last write time
+#        Default: "" - disabled (the main log is truncated, the others are appended to)
+#
+#    LogArchiveMaxAge
+#        At startup, after archiving, delete archived logs whose last write is more than this many days old
+#        Default: 0 - keep them all
+#
 #    PacketLogFile
 #        Description: Binary packet logging file for the world server.
 #                     Filename extension must be .pkt to be parsable with WPP.
@@ -438,6 +447,8 @@ PidFile = ""
 LogLevel = 1
 LogTime = 0
 LogFile = "Server.log"
+LogArchiveDir = ""
+LogArchiveMaxAge = 0
 PacketLogFile = ""
 LogTimestamp = 0
 LogFileLevel = 0
