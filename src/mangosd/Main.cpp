@@ -42,6 +42,10 @@
 #include <iostream>
 #include <string>
 
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
+
 #ifdef ENABLE_PLAYERBOTS
 #include "playerbot/PlayerbotAIConfig.h"
 #endif
@@ -190,6 +194,18 @@ int main(int argc, char* argv[])
     sLog.outString("Built for %s", _ENDIAN_PLATFORM);
     sLog.outString("Using commit hash(%s) committed on %s", REVISION_ID, REVISION_DATE);
     sLog.outString("Using configuration file %s.", configFile.c_str());
+
+#ifdef __GLIBC__
+    // Fork: a fixed mmap threshold keeps big blocks out of the heap, where glibc's rising default left GBs of free
+    // chunks (2026-10-10: 3.8 GB of a 10 GB heap after 9 h with 1,000 bots). Set before the world loads.
+    if (int32 mmapThreshold = sConfig.GetIntDefault("Malloc.MmapThreshold", 524288))
+    {
+        if (mallopt(M_MMAP_THRESHOLD, mmapThreshold))
+            sLog.outString("Malloc mmap threshold set to %d bytes.", mmapThreshold);
+        else
+            sLog.outError("Malloc.MmapThreshold %d rejected by glibc; keeping its dynamic default.", mmapThreshold);
+    }
+#endif
 
     DETAIL_LOG("%s (Library: %s)", OPENSSL_VERSION_TEXT, OpenSSL_version(OPENSSL_VERSION));
     // Load OpenSSL 3.0+ providers

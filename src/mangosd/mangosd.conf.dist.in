@@ -234,6 +234,14 @@ Spawns.ZoneArea = 0
 #        amount of seconds. Must be > 0. Recommended > 10 secs if you use this.
 #        Default: 0 (Disabled)
 #
+#    Malloc.MmapThreshold
+#        glibc only. Allocations of at least this many bytes get their own memory mapping, returned to the system
+#        when freed. glibc's own default starts at 128 KB but rises (up to 32 MB) whenever a large block is freed,
+#        after which multi-MB blocks stay in the heap as fragmented free space that resident memory never gives back.
+#        A fixed value also stops that rise.
+#        Default: 524288 (512 KB)
+#                 0      (glibc's dynamic default)
+#
 #    AddonChannel
 #        Permit/disable the use of the addon channel through the server
 #        (some client side addons can stop work correctly with disabled addon channel)
@@ -283,6 +291,7 @@ PathFinder.NormalizeZ = 0
 UpdateUptimeInterval = 10
 MapUpdate.Threads = 3
 MaxCoreStuckTime = 0
+Malloc.MmapThreshold = 524288
 AddonChannel = 1
 CleanCharacterDB = 1
 MaxWhoListReturns = 49
