@@ -20,6 +20,10 @@
 #include "Spells/SpellAuras.h"
 #include "Spells/SpellMgr.h"
 #include "Groups/Group.h"
+#include "Log/Log.h"
+#include <map>
+#include <mutex>
+#include <sstream>
 
 // 21082 - Seal of the Crusader
 struct SealOfTheCrusader : public AuraScript
@@ -94,7 +98,9 @@ enum
     SPELL_ANTICIPATION_FREE_SHIELD  = 55027,
     SPELL_ARDENT_DEFENDER_COOLDOWN  = 55028,
     SPELL_CONCENTRATION_AURA        = 19746,
-    SPELL_IMPROVED_CONCENTRATION_PERSONAL = 55029,
+    SPELL_IMPROVED_CONCENTRATION_PERSONAL_1 = 55102,   // one per talent rank, so the client's tooltip shows the real values
+    SPELL_IMPROVED_CONCENTRATION_PERSONAL_2 = 55103,
+    SPELL_IMPROVED_CONCENTRATION_PERSONAL_3 = 55029,
     SPELL_LIGHTS_GRACE_INSTANT      = 55030,
     SPELL_AURA_MASTERY_IMMUNITY     = 55031,
     SPELL_IMPROVED_LAY_ON_HANDS_R1  = 20234,
@@ -248,15 +254,17 @@ struct spell_judgement : public SpellScript
             // custom: Sanctified Judgement's seal mana refund is gone (the talent is Judgements of the Wise now, below)
             break;
         }
-        caster->CastSpell(unitTarget, spellId2, TRIGGERED_IGNORE_GCD | TRIGGERED_IGNORE_CURRENT_CASTED_SPELL);
+        // custom (2026-10-09): every judgement also puts WotLK's Judgement of Wisdom effect on the target (55100), before the
+        // judgement's own hit so that hit rolls too, as in WotLK. One per target: the latest paladin's replaces any other, so
+        // several paladins don't multiply the mana
         if (spellId2 > 1)
         {
-            JudgementsOfTheWise(caster);
-            // custom (2026-10-09): every judgement also puts WotLK's Judgement of Wisdom effect on the target (55100). One per
-            // target: the latest paladin's replaces any other, so several paladins don't multiply the mana
             unitTarget->RemoveAurasDueToSpell(SPELL_JUDGEMENT_DEBUFF);
             caster->CastSpell(unitTarget, SPELL_JUDGEMENT_DEBUFF, TRIGGERED_IGNORE_GCD | TRIGGERED_IGNORE_CURRENT_CASTED_SPELL | TRIGGERED_IGNORE_HIT_CALCULATION);
         }
+        caster->CastSpell(unitTarget, spellId2, TRIGGERED_IGNORE_GCD | TRIGGERED_IGNORE_CURRENT_CASTED_SPELL);
+        if (spellId2 > 1)
+            JudgementsOfTheWise(caster);
         // custom: Judgement of Justice also interrupts, with a 3 s school lockout (the classic fork's PvP judgement)
         if (spellId2 == SPELL_JUDGEMENT_OF_JUSTICE_R1 || spellId2 == SPELL_JUDGEMENT_OF_JUSTICE_R2)
             caster->CastSpell(unitTarget, SPELL_JUDGEMENT_OF_JUSTICE_INTERRUPT, TRIGGERED_IGNORE_GCD | TRIGGERED_IGNORE_CURRENT_CASTED_SPELL | TRIGGERED_IGNORE_HIT_CALCULATION);
@@ -518,8 +526,68 @@ struct Warding : public AuraScript
 // 55100 - Judgement (custom, 2026-10-09: WotLK 3.3.5's Judgement of Wisdom effect, put on by every judgement): an attack or
 // spell that hits the judged target has the spell's proc chance to restore effect 1's percent of the attacker's base mana,
 // logged as 55101. Every attacker with mana gains, not just the paladin; seal procs count (AttributesEx3 CAN_PROC_FROM_PROCS).
+// Diagnostics (2026-10-09, temporary): when a real player's Judgement debuff ends, Server.log gets one line with every hit
+// that reached the proc roll (by spell id, 0 = white swing), the procs and the mana. Bots are left out.
+namespace JudgementDiag
+{
+    struct Stats { uint32 start = 0; std::map<uint32, uint32> rolls; std::map<uint32, uint32> procBy; uint32 procs = 0; int32 mana = 0; };
+    static std::mutex lock;
+    static std::map<Aura const*, Stats> live;
+    static bool Tracked(Aura const* aura)
+    {
+        Unit* caster = aura->GetCaster();
+        return caster && caster->GetTypeId() == TYPEID_PLAYER && static_cast<Player*>(caster)->isRealPlayer();
+    }
+    static bool IsCrusaderStrike(SpellEntry const* spell) { return spell && spell->Id >= 55013 && spell->Id <= 55018; }
+}
+
 struct JudgementDebuff : public AuraScript
 {
+    void OnApply(Aura* aura, bool apply) const override
+    {
+        if (!JudgementDiag::Tracked(aura))
+            return;
+        std::lock_guard<std::mutex> guard(JudgementDiag::lock);
+        if (apply)
+        {
+            JudgementDiag::live[aura] = JudgementDiag::Stats();
+            JudgementDiag::live[aura].start = WorldTimer::getMSTime();
+            return;
+        }
+        auto itr = JudgementDiag::live.find(aura);
+        if (itr == JudgementDiag::live.end())
+            return;
+        JudgementDiag::Stats const& st = itr->second;
+        uint32 total = 0;
+        std::ostringstream rolls;
+        for (auto const& r : st.rolls)
+        {
+            total += r.second;
+            auto p = st.procBy.find(r.first);
+            rolls << ' ' << (r.first ? std::to_string(r.first) : std::string("swing")) << ' ' << (p != st.procBy.end() ? p->second : 0) << '/' << r.second;
+        }
+        sLog.outString("Judgement debuff: %s on %s (entry %u), %.1f s: %u rolls, procs/rolls by spell (%s ), %u procs, %d mana",
+            aura->GetCaster() ? aura->GetCaster()->GetName() : "?", aura->GetTarget()->GetName(), aura->GetTarget()->GetEntry(),
+            WorldTimer::getMSTimeDiff(st.start, WorldTimer::getMSTime()) / 1000.0f, total, rolls.str().c_str(), st.procs, st.mana);
+        JudgementDiag::live.erase(itr);
+    }
+
+    bool OnCheckProc(Aura* aura, ProcExecutionData& procData) const override
+    {
+        if (JudgementDiag::Tracked(aura))
+        {
+            std::lock_guard<std::mutex> guard(JudgementDiag::lock);
+            auto itr = JudgementDiag::live.find(aura);
+            if (itr != JudgementDiag::live.end())
+                ++itr->second.rolls[procData.spellInfo ? procData.spellInfo->Id : 0];
+            if (JudgementDiag::IsCrusaderStrike(procData.spellInfo))
+                sLog.outString("Judgement debuff: Crusader Strike %u reached the roll: damage %u, absorb %u, procEx 0x%X, procFlags 0x%X, attacker %s, triggered %d",
+                    procData.spellInfo->Id, procData.damage, procData.absorb, procData.procExtra, procData.procFlags,
+                    procData.attacker ? procData.attacker->GetName() : "?", procData.spell ? int(procData.spell->m_IsTriggeredSpell) : -1);
+        }
+        return true;
+    }
+
     SpellAuraProcResult OnProc(Aura* aura, ProcExecutionData& procData) const override
     {
         Unit* attacker = procData.attacker;
@@ -529,6 +597,19 @@ struct JudgementDebuff : public AuraScript
         if (mana <= 0)
             return SPELL_AURA_PROC_CANT_TRIGGER;
         attacker->CastCustomSpell(nullptr, SPELL_JUDGEMENT_MANA, &mana, nullptr, nullptr, TRIGGERED_OLD_TRIGGERED);
+        if (JudgementDiag::Tracked(aura))
+        {
+            std::lock_guard<std::mutex> guard(JudgementDiag::lock);
+            auto itr = JudgementDiag::live.find(aura);
+            if (itr != JudgementDiag::live.end())
+            {
+                ++itr->second.procs;
+                ++itr->second.procBy[procData.spellInfo ? procData.spellInfo->Id : 0];
+                if (JudgementDiag::IsCrusaderStrike(procData.spellInfo))
+                    sLog.outString("Judgement debuff: Crusader Strike %u procced, %d mana", procData.spellInfo->Id, mana);
+                itr->second.mana += mana;
+            }
+        }
         return SPELL_AURA_PROC_OK;
     }
 };
@@ -727,13 +808,33 @@ struct ImprovedDevotionAura : public AuraScript
 };
 
 // 20254-20256 - Improved Concentration Aura (custom, the classic fork's "under any aura"): TBC's party effect stays; while your own
-// Concentration Aura is not on you, 55029 gives you its pushback resistance (35% + effect 1) and effect 2's silence/interrupt cut
+// Concentration Aura is not on you, 55102/55103/55029 (ranks 1/2/3) give you its pushback resistance (35% + the talent's) and the
+// talent's silence/interrupt cut. A 2.4.3 client builds aura tooltips from its own Spell.dbc, so each rank's values live there
+static uint32 const ImprovedConcentrationPersonal[] = { SPELL_IMPROVED_CONCENTRATION_PERSONAL_1, SPELL_IMPROVED_CONCENTRATION_PERSONAL_2, SPELL_IMPROVED_CONCENTRATION_PERSONAL_3 };
+
 struct ImprovedConcentrationAura : public AuraScript
 {
+    static uint32 PersonalSpell(uint32 talentId)
+    {
+        switch (talentId)
+        {
+            case 20254: return SPELL_IMPROVED_CONCENTRATION_PERSONAL_1;
+            case 20255: return SPELL_IMPROVED_CONCENTRATION_PERSONAL_2;
+            default: return SPELL_IMPROVED_CONCENTRATION_PERSONAL_3;
+        }
+    }
+
+    static void RemovePersonal(Unit* target, uint32 keep = 0)
+    {
+        for (uint32 spellId : ImprovedConcentrationPersonal)
+            if (spellId != keep)
+                target->RemoveAurasDueToSpell(spellId);
+    }
+
     void OnApply(Aura* aura, bool apply) const override
     {
         if (!apply && aura->GetEffIndex() == EFFECT_INDEX_0)
-            aura->GetTarget()->RemoveAurasDueToSpell(SPELL_IMPROVED_CONCENTRATION_PERSONAL);
+            RemovePersonal(aura->GetTarget());
     }
 
     void OnHeartbeat(Aura* aura) const override
@@ -743,15 +844,13 @@ struct ImprovedConcentrationAura : public AuraScript
         Unit* target = aura->GetTarget();
         if (target->GetSpellAuraHolder(SPELL_CONCENTRATION_AURA, target->GetObjectGuid()))
         {
-            target->RemoveAurasDueToSpell(SPELL_IMPROVED_CONCENTRATION_PERSONAL);
+            RemovePersonal(target);
             return;
         }
-        if (target->HasAura(SPELL_IMPROVED_CONCENTRATION_PERSONAL))
-            return;
-        SpellEntry const* talent = aura->GetSpellProto();
-        int32 pushback = sSpellTemplate.LookupEntry<SpellEntry>(SPELL_CONCENTRATION_AURA)->CalculateSimpleValue(EFFECT_INDEX_0) + talent->CalculateSimpleValue(EFFECT_INDEX_0);
-        int32 duration = talent->CalculateSimpleValue(EFFECT_INDEX_1);
-        target->CastCustomSpell(target, SPELL_IMPROVED_CONCENTRATION_PERSONAL, &pushback, &duration, &duration, TRIGGERED_OLD_TRIGGERED);
+        uint32 personal = PersonalSpell(aura->GetId());
+        RemovePersonal(target, personal);   // a rank learned or unlearned since
+        if (!target->HasAura(personal))
+            target->CastSpell(target, personal, TRIGGERED_OLD_TRIGGERED);
     }
 };
 
@@ -844,6 +943,33 @@ struct AuraMastery : public AuraScript
     }
 };
 
+// 55013-55018 - Crusader Strike (custom, trained): a one-hander counts as a two-hander of the same item level. Weapon
+// percent damage uses the weapon's own hit and speed, so on the same 4 s cooldown a two-hander struck about twice as hard.
+// With a one-hander the effect's percent is scaled so the strike deals weapon DPS x 1.45 (the average two-hand/one-hand DPS
+// gap in the item data) plus attack power, both at a 3.3 s speed (the user, 2026-10-09).
+struct CrusaderStrike : public SpellScript
+{
+    void OnEffectExecute(Spell* spell, SpellEffectIndex effIdx) const override
+    {
+        if (spell->m_spellInfo->Effect[effIdx] != SPELL_EFFECT_WEAPON_PERCENT_DAMAGE)
+            return;
+        Unit* caster = spell->GetCaster();
+        if (!caster || caster->GetTypeId() != TYPEID_PLAYER)
+            return;
+        Item* weapon = static_cast<Player*>(caster)->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+        if (!weapon || weapon->GetProto()->InventoryType == INVTYPE_2HWEAPON || !weapon->GetProto()->Delay)
+            return;
+        ItemPrototype const* proto = weapon->GetProto();
+        float speed = proto->Delay / 1000.0f;
+        float dps = (proto->Damage[0].DamageMin + proto->Damage[0].DamageMax) / 2.0f / speed;
+        float apPerSec = caster->GetTotalAttackPowerValue(BASE_ATTACK) / 14.0f;
+        float actual = dps * speed + apPerSec * speed;
+        float wanted = dps * 1.45f * 3.3f + apPerSec * 3.3f;
+        if (actual > 0.0f && wanted > actual)
+            spell->SetDamage(uint32(spell->GetDamage() * wanted / actual));
+    }
+};
+
 // 55020 - Divine Storm (custom Retribution talent, replaces Crusader Strike): heals the paladin for 25% of the damage dealt
 struct DivineStorm : public SpellScript
 {
@@ -880,6 +1006,7 @@ void LoadPaladinScripts()
     RegisterSpellScript<JudgementOfTheCrusader>("spell_judgement_of_the_crusader");
     RegisterSpellScript<RighteousJudgement>("spell_paladin_righteous_judgement");
     RegisterSpellScript<DivineStorm>("spell_paladin_divine_storm");
+    RegisterSpellScript<CrusaderStrike>("spell_paladin_crusader_strike");
     RegisterSpellScript<Warding>("spell_paladin_warding");
     RegisterSpellScript<Replenishment>("spell_paladin_replenishment");
     RegisterSpellScript<SealOfJustice>("spell_paladin_seal_of_justice");
