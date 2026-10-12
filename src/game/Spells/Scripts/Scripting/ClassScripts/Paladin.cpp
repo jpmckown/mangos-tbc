@@ -20,10 +20,6 @@
 #include "Spells/SpellAuras.h"
 #include "Spells/SpellMgr.h"
 #include "Groups/Group.h"
-#include "Log/Log.h"
-#include <map>
-#include <mutex>
-#include <sstream>
 
 // 21082 - Seal of the Crusader
 struct SealOfTheCrusader : public AuraScript
@@ -526,68 +522,8 @@ struct Warding : public AuraScript
 // 55100 - Judgement (custom, 2026-10-09: WotLK 3.3.5's Judgement of Wisdom effect, put on by every judgement): an attack or
 // spell that hits the judged target has the spell's proc chance to restore effect 1's percent of the attacker's base mana,
 // logged as 55101. Every attacker with mana gains, not just the paladin; seal procs count (AttributesEx3 CAN_PROC_FROM_PROCS).
-// Diagnostics (2026-10-09, temporary): when a real player's Judgement debuff ends, Server.log gets one line with every hit
-// that reached the proc roll (by spell id, 0 = white swing), the procs and the mana. Bots are left out.
-namespace JudgementDiag
-{
-    struct Stats { uint32 start = 0; std::map<uint32, uint32> rolls; std::map<uint32, uint32> procBy; uint32 procs = 0; int32 mana = 0; };
-    static std::mutex lock;
-    static std::map<Aura const*, Stats> live;
-    static bool Tracked(Aura const* aura)
-    {
-        Unit* caster = aura->GetCaster();
-        return caster && caster->GetTypeId() == TYPEID_PLAYER && static_cast<Player*>(caster)->isRealPlayer();
-    }
-    static bool IsCrusaderStrike(SpellEntry const* spell) { return spell && spell->Id >= 55013 && spell->Id <= 55018; }
-}
-
 struct JudgementDebuff : public AuraScript
 {
-    void OnApply(Aura* aura, bool apply) const override
-    {
-        if (!JudgementDiag::Tracked(aura))
-            return;
-        std::lock_guard<std::mutex> guard(JudgementDiag::lock);
-        if (apply)
-        {
-            JudgementDiag::live[aura] = JudgementDiag::Stats();
-            JudgementDiag::live[aura].start = WorldTimer::getMSTime();
-            return;
-        }
-        auto itr = JudgementDiag::live.find(aura);
-        if (itr == JudgementDiag::live.end())
-            return;
-        JudgementDiag::Stats const& st = itr->second;
-        uint32 total = 0;
-        std::ostringstream rolls;
-        for (auto const& r : st.rolls)
-        {
-            total += r.second;
-            auto p = st.procBy.find(r.first);
-            rolls << ' ' << (r.first ? std::to_string(r.first) : std::string("swing")) << ' ' << (p != st.procBy.end() ? p->second : 0) << '/' << r.second;
-        }
-        sLog.outString("Judgement debuff: %s on %s (entry %u), %.1f s: %u rolls, procs/rolls by spell (%s ), %u procs, %d mana",
-            aura->GetCaster() ? aura->GetCaster()->GetName() : "?", aura->GetTarget()->GetName(), aura->GetTarget()->GetEntry(),
-            WorldTimer::getMSTimeDiff(st.start, WorldTimer::getMSTime()) / 1000.0f, total, rolls.str().c_str(), st.procs, st.mana);
-        JudgementDiag::live.erase(itr);
-    }
-
-    bool OnCheckProc(Aura* aura, ProcExecutionData& procData) const override
-    {
-        if (JudgementDiag::Tracked(aura))
-        {
-            std::lock_guard<std::mutex> guard(JudgementDiag::lock);
-            auto itr = JudgementDiag::live.find(aura);
-            if (itr != JudgementDiag::live.end())
-                ++itr->second.rolls[procData.spellInfo ? procData.spellInfo->Id : 0];
-            if (JudgementDiag::IsCrusaderStrike(procData.spellInfo))
-                sLog.outString("Judgement debuff: Crusader Strike %u reached the roll: damage %u, absorb %u, procEx 0x%X, procFlags 0x%X, attacker %s, triggered %d",
-                    procData.spellInfo->Id, procData.damage, procData.absorb, procData.procExtra, procData.procFlags,
-                    procData.attacker ? procData.attacker->GetName() : "?", procData.spell ? int(procData.spell->m_IsTriggeredSpell) : -1);
-        }
-        return true;
-    }
-
     SpellAuraProcResult OnProc(Aura* aura, ProcExecutionData& procData) const override
     {
         Unit* attacker = procData.attacker;
@@ -597,19 +533,6 @@ struct JudgementDebuff : public AuraScript
         if (mana <= 0)
             return SPELL_AURA_PROC_CANT_TRIGGER;
         attacker->CastCustomSpell(nullptr, SPELL_JUDGEMENT_MANA, &mana, nullptr, nullptr, TRIGGERED_OLD_TRIGGERED);
-        if (JudgementDiag::Tracked(aura))
-        {
-            std::lock_guard<std::mutex> guard(JudgementDiag::lock);
-            auto itr = JudgementDiag::live.find(aura);
-            if (itr != JudgementDiag::live.end())
-            {
-                ++itr->second.procs;
-                ++itr->second.procBy[procData.spellInfo ? procData.spellInfo->Id : 0];
-                if (JudgementDiag::IsCrusaderStrike(procData.spellInfo))
-                    sLog.outString("Judgement debuff: Crusader Strike %u procced, %d mana", procData.spellInfo->Id, mana);
-                itr->second.mana += mana;
-            }
-        }
         return SPELL_AURA_PROC_OK;
     }
 };
