@@ -467,12 +467,14 @@ void AuctionHouseMgr::LoadAuctions()
 void AuctionHouseMgr::AddAItem(Item* it)
 {
     MANGOS_ASSERT(it);
+    sAuctionService.CheckWorldThread("AuctionHouseMgr::AddAItem");
     MANGOS_ASSERT(mAitems.find(it->GetGUIDLow()) == mAitems.end());
     mAitems[it->GetGUIDLow()] = it;
 }
 
 bool AuctionHouseMgr::RemoveAItem(uint32 id)
 {
+    sAuctionService.CheckWorldThread("AuctionHouseMgr::RemoveAItem");
     ItemMap::iterator i = mAitems.find(id);
     if (i == mAitems.end())
     {
@@ -780,7 +782,21 @@ bool AuctionSorter::operator()(const AuctionEntry* auc1, const AuctionEntry* auc
         if (m_sort[i] == MAX_AUCTION_SORT)                  // end of sort
             return false;
 
-        int res = auc1->CompareAuctionEntry(m_sort[i] & ~AUCTION_SORT_REVERSED, auc2, m_viewPlayer);
+        uint32 column = m_sort[i] & ~AUCTION_SORT_REVERSED;
+        int res = 0;
+        bool compared = false;
+        if (column == 5 && m_names)                         // Fork (ah-market): name, from names converted once per request
+        {
+            auto name1 = m_names->find(auc1->itemTemplate);
+            auto name2 = m_names->find(auc2->itemTemplate);
+            if (name1 != m_names->end() && name2 != m_names->end())
+            {
+                res = name1->second.compare(name2->second);
+                compared = true;
+            }
+        }
+        if (!compared)
+            res = auc1->CompareAuctionEntry(column, auc2, m_viewPlayer);
         // "equal" by used column
         if (res == 0)
             continue;
@@ -791,22 +807,37 @@ bool AuctionSorter::operator()(const AuctionEntry* auc1, const AuctionEntry* auc
     return false;                                           // "equal" by all sorts
 }
 
-void WorldSession::BuildListAuctionItems(std::vector<AuctionEntry*> const& auctions, WorldPacket& data, std::wstring const& wsearchedname, uint32 listfrom, uint32 levelmin,
+// Fork (ah-market): filter first, then sort only the matches. Upstream sorted the whole house on every browse
+// request, converting both item names to wide strings on every name comparison (~15-25 ms at 10k auctions).
+void WorldSession::BuildListAuctionItems(AuctionHouseObject::AuctionEntryMap const& auctions, uint8* sort, WorldPacket& data, std::wstring const& wsearchedname, uint32 listfrom, uint32 levelmin,
         uint32 levelmax, uint32 usable, uint32 inventoryType, uint32 itemClass, uint32 itemSubClass, uint32 quality, uint32& count, uint32& totalcount, bool isFull) const
 {
     int loc_idx = _player->GetSession()->GetSessionDbLocaleIndex();
 
-    for (auto Aentry : auctions)
+    AuctionSorter::ItemNames names;
+    auto nameOf = [&](ItemPrototype const* proto) -> std::wstring const&
     {
+        auto itr = names.find(proto->ItemId);
+        if (itr == names.end())
+        {
+            std::string name = proto->Name1;
+            sObjectMgr.GetItemLocaleStrings(proto->ItemId, loc_idx, &name);
+            itr = names.emplace(proto->ItemId, std::wstring()).first;
+            Utf8toWStr(name, itr->second);
+        }
+        return itr->second;
+    };
+
+    std::vector<AuctionEntry*> matches;
+    for (auto const& itr : auctions)
+    {
+        AuctionEntry* Aentry = itr.second;
         Item* item = sAuctionMgr.GetAItem(Aentry->itemGuidLow);
         if (!item)
             continue;
 
         if (isFull)
-        {
-            ++count;
-            Aentry->BuildAuctionInfo(data);
-        }
+            nameOf(item->GetProto());
         else
         {
             ItemPrototype const* proto = item->GetProto();
@@ -849,17 +880,27 @@ void WorldSession::BuildListAuctionItems(std::vector<AuctionEntry*> const& aucti
                 }
             }
 
-            std::string name = proto->Name1;
-            sObjectMgr.GetItemLocaleStrings(proto->ItemId, loc_idx, &name);
-
-            if (!wsearchedname.empty() && !Utf8FitTo(name, wsearchedname))
-                continue;
-
-            if (count < MAX_AUCTION_ITEMS_CLIENT_UI_PAGE && totalcount >= listfrom)
+            std::wstring const& name = nameOf(proto);
+            if (!wsearchedname.empty())
             {
-                ++count;
-                Aentry->BuildAuctionInfo(data);
+                std::wstring lowerName = name;
+                wstrToLower(lowerName);
+                if (lowerName.find(wsearchedname) == std::wstring::npos)
+                    continue;
             }
+        }
+
+        matches.push_back(Aentry);
+    }
+
+    std::sort(matches.begin(), matches.end(), AuctionSorter(sort, _player, &names));
+
+    for (AuctionEntry* Aentry : matches)
+    {
+        if (isFull || (count < MAX_AUCTION_ITEMS_CLIENT_UI_PAGE && totalcount >= listfrom))
+        {
+            ++count;
+            Aentry->BuildAuctionInfo(data);
         }
 
         ++totalcount;
@@ -994,6 +1035,8 @@ void AuctionEntry::AuctionBidWinning(Player* newbidder)
 
 bool AuctionEntry::UpdateBid(uint32 newbid, Player* newbidder /*=nullptr*/)
 {
+    sAuctionService.CheckWorldThread("AuctionEntry::UpdateBid");
+
     Player* auction_owner = owner ? sObjectMgr.GetPlayer(ObjectGuid(HIGHGUID_PLAYER, owner)) : nullptr;
 
     // bid can't be greater buyout

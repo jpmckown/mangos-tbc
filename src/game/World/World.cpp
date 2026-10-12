@@ -34,6 +34,7 @@
 #include "Skills/SkillDiscovery.h"
 #include "Accounts/AccountMgr.h"
 #include "AuctionHouse/AuctionHouseMgr.h"
+#include "AuctionHouse/AuctionMarket.h"
 #include "Globals/ObjectMgr.h"
 #include "AI/EventAI/CreatureEventAIMgr.h"
 #include "Guilds/GuildMgr.h"
@@ -1502,6 +1503,9 @@ void World::SetInitialWorldSettings()
 #endif
 #endif
 
+    sLog.outString("Loading AH market...");
+    sAuctionMarket.Load();
+
     sLog.outString("---------------------------------------");
     sLog.outString("      CMANGOS: World initialized       ");
     sLog.outString("---------------------------------------");
@@ -1606,6 +1610,10 @@ void World::Update(uint32 diff)
 
     GetMessager().Execute(this);
 
+    ///- Run auction work handed over from other threads, then let the market bot stock and buy
+    sAuctionService.Update();
+    sAuctionMarket.Update(diff);
+
     ///-Update mass mailer tasks if any
     sMassMailMgr.Update();
 
@@ -1648,14 +1656,6 @@ void World::Update(uint32 diff)
 #endif
 
 #ifdef ENABLE_PLAYERBOTS
-#ifndef BUILD_AHBOT
-    /// <li> Handle AHBot operations
-    if (m_timers[WUPDATE_AHBOT].Passed())
-    {
-        auctionbot.Update();
-        m_timers[WUPDATE_AHBOT].Reset();
-    }
-#endif
     sRandomPlayerbotMgr.UpdateAI(diff);
     sRandomPlayerbotMgr.UpdateSessions(diff);
 #endif

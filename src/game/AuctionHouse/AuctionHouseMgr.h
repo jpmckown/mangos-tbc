@@ -21,6 +21,7 @@
 
 #include "Common.h"
 #include "Server/DBCStructure.h"
+#include "AuctionHouse/AuctionService.h"
 
 class Item;
 class Player;
@@ -108,6 +109,7 @@ class AuctionHouseObject
         void AddAuction(AuctionEntry* ah)
         {
             MANGOS_ASSERT(ah);
+            sAuctionService.CheckWorldThread("AuctionHouseObject::AddAuction");
             AuctionsMap[ah->Id] = ah;
         }
 
@@ -117,7 +119,11 @@ class AuctionHouseObject
             return itr != AuctionsMap.end() ? itr->second : nullptr;
         }
 
-        bool RemoveAuction(uint32 id) { return !!AuctionsMap.erase(id); }
+        bool RemoveAuction(uint32 id)
+        {
+            sAuctionService.CheckWorldThread("AuctionHouseObject::RemoveAuction");
+            return !!AuctionsMap.erase(id);
+        }
 
         void Update();
 
@@ -132,13 +138,16 @@ class AuctionHouseObject
 class AuctionSorter
 {
     public:
-        AuctionSorter(AuctionSorter const& sorter) : m_sort(sorter.m_sort), m_viewPlayer(sorter.m_viewPlayer) {}
-        AuctionSorter(uint8* sort, Player* viewPlayer) : m_sort(sort), m_viewPlayer(viewPlayer) {}
+        typedef std::unordered_map<uint32, std::wstring> ItemNames;     // item template -> localized name
+
+        AuctionSorter(AuctionSorter const& sorter) : m_sort(sorter.m_sort), m_viewPlayer(sorter.m_viewPlayer), m_names(sorter.m_names) {}
+        AuctionSorter(uint8* sort, Player* viewPlayer, ItemNames const* names = nullptr) : m_sort(sort), m_viewPlayer(viewPlayer), m_names(names) {}
         bool operator()(const AuctionEntry* auc1, const AuctionEntry* auc2) const;
 
     private:
         uint8* m_sort;
         Player* m_viewPlayer;
+        ItemNames const* m_names;                           // Fork (ah-market): names converted once per request
 };
 
 enum AuctionHouseType

@@ -943,11 +943,20 @@ ChatCommand* ChatHandler::getCommandTable()
         { nullptr,         0,                  false,  nullptr,                                        "", nullptr }
     };
 
+    static ChatCommand ahmarketCommandTable[] =
+    {
+        { "pass",           SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleAhMarketPassCommand,        "", nullptr },
+        { "reload",         SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleAhMarketReloadCommand,      "", nullptr },
+        { "status",         SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleAhMarketStatusCommand,      "", nullptr },
+        { nullptr,          0,                  false, nullptr,                                        "", nullptr }
+    };
+
     static ChatCommand commandTable[] =
     {
         { "anticheat",      SEC_GAMEMASTER,     true,  nullptr,                                        "", anticheatCommandTable},
         { "account",        SEC_PLAYER,         true,  nullptr,                                        "", accountCommandTable  },
         { "auction",        SEC_ADMINISTRATOR,  false, nullptr,                                        "", auctionCommandTable  },
+        { "ahmarket",       SEC_ADMINISTRATOR,  true,  nullptr,                                        "", ahmarketCommandTable },
 #ifdef BUILD_AHBOT
         { "ahbot",          SEC_ADMINISTRATOR,  true,  nullptr,                                        "", ahbotCommandTable    },
 #endif

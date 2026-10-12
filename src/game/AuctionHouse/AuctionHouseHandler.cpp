@@ -592,17 +592,6 @@ void WorldSession::HandleAuctionListItems(WorldPacket& recv_data)
     // always return pointer
     AuctionHouseObject* auctionHouse = sAuctionMgr.GetAuctionsMap(auctionHouseEntry);
 
-    // Sort
-    AuctionHouseObject::AuctionEntryMap const& aucs = auctionHouse->GetAuctions();
-    std::vector<AuctionEntry*> auctions;
-    auctions.reserve(aucs.size());
-
-    for (const auto& auc : aucs)
-        auctions.push_back(auc.second);
-
-    AuctionSorter sorter(Sort, GetPlayer());
-    std::sort(auctions.begin(), auctions.end(), sorter);
-
     // remove fake death
     if (GetPlayer()->IsFeigningDeath())
         GetPlayer()->RemoveSpellsCausingAura(SPELL_AURA_FEIGN_DEATH);
@@ -622,7 +611,8 @@ void WorldSession::HandleAuctionListItems(WorldPacket& recv_data)
 
     wstrToLower(wsearchedname);
 
-    BuildListAuctionItems(auctions, data, wsearchedname, listfrom, levelmin, levelmax, usable,
+    // Fork (ah-market): filters, then sorts only the matches
+    BuildListAuctionItems(auctionHouse->GetAuctions(), Sort, data, wsearchedname, listfrom, levelmin, levelmax, usable,
                           auctionSlotID, auctionMainCategory, auctionSubCategory, quality, count, totalcount, isFull != 0);
 
     data.put<uint32>(0, count);
