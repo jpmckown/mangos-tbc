@@ -827,6 +827,10 @@ int TerrainInfo::UnrefGrid(const uint32& x, const uint32& y)
 
 float TerrainInfo::GetHeightStatic(float x, float y, float z, bool useVmaps/*=true*/, float maxSearchDist/*=DEFAULT_HEIGHT_SEARCH*/) const
 {
+    // Fork: a non-finite position never ends the vmap ray search (the world hung on a NaN z, 2026-10-11)
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
+        return VMAP_INVALID_HEIGHT_VALUE;
+
     float mapHeight = VMAP_INVALID_HEIGHT_VALUE;            // Store Height obtained by maps
     float vmapHeight = VMAP_INVALID_HEIGHT_VALUE;           // Store Height obtained by vmaps (in "corridor" of z (or slightly above z)
 

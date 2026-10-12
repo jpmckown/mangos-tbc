@@ -2813,6 +2813,7 @@ bool ScriptAction::ExecuteDbscriptCommand(WorldObject* pSource, WorldObject* pTa
                 if (m_script->data_flags & SCRIPT_FLAG_COMMAND_ADDITIONAL) // no bounding radius
                 {
                     pTarget->GetNearPoint2dAt(pTarget->GetPositionX(), pTarget->GetPositionY(), x, y, m_script->moveDynamic.fixedDist, pTarget->GetAngle(source));
+                    z = pTarget->GetPositionZ(); // Fork: z was uninitialized here; a NaN hung the vmap height search (relay 18037, 2026-10-11)
                     if (source)
                         source->UpdateAllowedPositionZ(x, y, z, pTarget->GetMap()); // update to LOS height if available
                 }
