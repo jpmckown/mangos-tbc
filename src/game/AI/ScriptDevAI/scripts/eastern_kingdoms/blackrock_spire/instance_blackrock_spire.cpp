@@ -23,6 +23,7 @@ EndScriptData */
 
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "blackrock_spire.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -96,6 +97,43 @@ static const DialogueEntry aStadiumDialogue[] =
 
 static const float rookeryEventSpawnPos[3] = {51.11098f, -266.0549f, 92.87846f};
 
+// Fork (solo): S28 Urok Doomhowl's challenge (event 4845, Spawn Challenge to Urok 16447). Stock tbc-db summoned these from
+// dbscripts_on_event 4845: 10 elite ogres within 58 s, then Urok at 66 s whatever was still alive. SOLO_DUNGEONS_BLACKROCK.sql
+// moves the summons here (the gameobject respawns stay in dbscripts) so the timeline scales with the player count:
+// solo one ogre every 20 s and Urok 20 s after the last (3 min 25 s), the stock timeline with 5 players.
+struct UrokSpawn
+{
+    uint32 entry;
+    float x, y, z, o;
+    uint32 stockDelay;
+};
+
+enum
+{
+    NPC_UROK_DOOMHOWL           = 10584,
+    NPC_UROK_ENFORCER           = 10601,
+    NPC_UROK_OGRE_MAGUS         = 10602,
+
+    UROK_SOLO_FIRST_DELAY       = 5000,
+    UROK_SOLO_INTERVAL          = 20000,
+    UROK_SUMMON_DESPAWN         = 432000,
+};
+
+static const UrokSpawn aUrokSpawns[MAX_UROK_SPAWNS] =
+{
+    {NPC_UROK_ENFORCER,   -16.12f, -376.99f, 49.2f,  4.89f,  5000},
+    {NPC_UROK_ENFORCER,   -25.13f, -376.6f,  48.94f, 5.17f,  5000},
+    {NPC_UROK_OGRE_MAGUS, -33.04f, -385.57f, 48.6f,  5.98f,  5000},
+    {NPC_UROK_OGRE_MAGUS, -14.93f, -381.99f, 49.04f, 4.7f,  13000},
+    {NPC_UROK_OGRE_MAGUS, -35.47f, -371.36f, 50.22f, 4.79f, 28000},
+    {NPC_UROK_ENFORCER,   -47.54f, -368.11f, 51.67f, 5.7f,  28000},
+    {NPC_UROK_ENFORCER,   -24.91f, -376.41f, 48.95f, 4.67f, 42000},
+    {NPC_UROK_OGRE_MAGUS, -14.58f, -375.16f, 49.31f, 4.73f, 42000},
+    {NPC_UROK_OGRE_MAGUS, -33.04f, -385.57f, 48.6f,  5.98f, 42000},
+    {NPC_UROK_OGRE_MAGUS, -47.54f, -368.11f, 51.67f, 5.7f,  58000},
+    {NPC_UROK_DOOMHOWL,   -23.97f, -391.89f, 48.58f, 1.68f, 66000},
+};
+
 instance_blackrock_spire::instance_blackrock_spire(Map* pMap) : ScriptedInstance(pMap), DialogueHelper(aStadiumDialogue),
     m_bBeastIntroDone(false),
     m_bBeastOutOfLair(false),
@@ -106,7 +144,10 @@ instance_blackrock_spire::instance_blackrock_spire(Map* pMap) : ScriptedInstance
     m_uiFlamewreathWaveCount(0),
     m_uiStadiumEventTimer(0),
     m_uiStadiumWaves(0),
-    m_uiStadiumMobsAlive(0)
+    m_uiStadiumMobsAlive(0),
+    m_bUrokChallengeActive(false),                          // Fork (solo): S28
+    m_uiUrokElapsed(0),
+    m_uiUrokNextSpawn(0)
 {
     Initialize();
 }
@@ -667,7 +708,51 @@ void instance_blackrock_spire::DoSendNextStadiumWave()
     if (m_uiStadiumWaves >= MAX_STADIUM_WAVES)
         m_uiStadiumEventTimer = 0;
     else
-        m_uiStadiumEventTimer = 60000;
+        // Fork (solo): S29 the next wave comes when this one is dead or after 120 s solo (stock 60 s, reached at 10 players)
+        m_uiStadiumEventTimer = uint32(ScaleByPlayerCount(instance, 10, 120000.0f, 60000.0f));
+}
+
+// Fork (solo): S28 Urok Doomhowl's challenge, see aUrokSpawns
+void instance_blackrock_spire::StartUrokChallenge(Player* pPlayer)
+{
+    // One challenge at a time (the dbscripts respawn the pile and its gameobjects either way)
+    if (m_bUrokChallengeActive)
+        return;
+
+    m_bUrokChallengeActive = true;
+    m_uiUrokElapsed = 0;
+    m_uiUrokNextSpawn = 0;
+    m_urokChallengerGuid = pPlayer->GetObjectGuid();
+
+    // Delays are fixed at the start, from the player count then
+    for (uint32 i = 0; i < MAX_UROK_SPAWNS; ++i)
+    {
+        float soloDelay = float(UROK_SOLO_FIRST_DELAY + UROK_SOLO_INTERVAL * i);
+        m_auiUrokDelay[i] = uint32(ScaleByPlayerCount(instance, 5, soloDelay, float(aUrokSpawns[i].stockDelay)));
+    }
+}
+
+void instance_blackrock_spire::DoUpdateUrokChallenge(uint32 uiDiff)
+{
+    if (!m_bUrokChallengeActive)
+        return;
+
+    Player* pSummoner = instance->GetPlayer(m_urokChallengerGuid);
+    if (!pSummoner || !pSummoner->IsInWorld())
+        pSummoner = GetPlayerInMap();
+    if (!pSummoner)
+        return;                                             // nobody left to summon for: wait
+
+    m_uiUrokElapsed += uiDiff;
+    while (m_uiUrokNextSpawn < MAX_UROK_SPAWNS && m_uiUrokElapsed >= m_auiUrokDelay[m_uiUrokNextSpawn])
+    {
+        UrokSpawn const& spawn = aUrokSpawns[m_uiUrokNextSpawn];
+        pSummoner->SummonCreature(spawn.entry, spawn.x, spawn.y, spawn.z, spawn.o, TEMPSPAWN_TIMED_OOC_OR_DEAD_DESPAWN, UROK_SUMMON_DESPAWN, false, true);
+        ++m_uiUrokNextSpawn;
+    }
+
+    if (m_uiUrokNextSpawn >= MAX_UROK_SPAWNS)
+        m_bUrokChallengeActive = false;
 }
 
 void instance_blackrock_spire::DoSendNextFlamewreathWave()
@@ -717,6 +802,8 @@ void instance_blackrock_spire::DoSendNextFlamewreathWave()
 void instance_blackrock_spire::Update(uint32 uiDiff)
 {
     DialogueUpdate(uiDiff);
+
+    DoUpdateUrokChallenge(uiDiff);                          // Fork (solo): S28
 
     if (m_uiStadiumEventTimer)
     {
@@ -882,6 +969,18 @@ bool ProcessEventId_event_spell_altar_emberseer(uint32 /*uiEventId*/, Object* pS
     return false;
 }
 
+// Fork (solo): S28 event 4845 (Spawn Challenge to Urok 16447): the summons run in the instance script; returning false
+// lets dbscripts_on_event 4845 still respawn the pile's gameobjects
+bool ProcessEventId_event_spell_challenge_to_urok(uint32 /*uiEventId*/, Object* pSource, Object* /*pTarget*/, bool bIsStart)
+{
+    if (bIsStart && pSource->GetTypeId() == TYPEID_PLAYER)
+    {
+        if (instance_blackrock_spire* pInstance = dynamic_cast<instance_blackrock_spire*>(((Player*)pSource)->GetInstanceData()))
+            pInstance->StartUrokChallenge((Player*)pSource);
+    }
+    return false;
+}
+
 bool GOUse_go_father_flame(Player* /*pPlayer*/, GameObject* pGo)
 {
     if (instance_blackrock_spire* pInstance = (instance_blackrock_spire*)pGo->GetInstanceData())
@@ -1037,6 +1136,11 @@ void AddSC_instance_blackrock_spire()
     pNewScript = new Script;
     pNewScript->Name = "event_spell_altar_emberseer";
     pNewScript->pProcessEventId = &ProcessEventId_event_spell_altar_emberseer;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "event_spell_challenge_to_urok";   // Fork (solo): S28
+    pNewScript->pProcessEventId = &ProcessEventId_event_spell_challenge_to_urok;
     pNewScript->RegisterSelf();
 
     pNewScript = new Script;

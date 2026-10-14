@@ -711,6 +711,13 @@ LogColors = ""
 #        The hour of the day (0-23) when the global instance resets occur.
 #        Default: 4
 #
+#    Instance.CreatureCCMaxDuration
+#        Fork (solo play): longest crowd control (stun, fear, sleep, polymorph, banish, root, silence, pacify,
+#        disorient...) a creature can put on a player inside a dungeon or raid, in milliseconds.
+#        Infinite-duration auras and charms are not affected.
+#        Default: 3000
+#                 0 (off, stock durations)
+#
 #    Instance.UnloadDelay
 #        Unload the instance map from memory after some time if no players are inside.
 #        Default: 1800000 (miliseconds, i.e 30 minutes)
@@ -909,6 +916,7 @@ Instance.IgnoreLevel = 0
 Instance.IgnoreRaid = 0
 Instance.StrictCombatLockdown = 1
 Instance.ResetTimeHour = 4
+Instance.CreatureCCMaxDuration = 3000
 Instance.UnloadDelay = 1800000
 Instance.DisableRelocate = 0
 Quests.LowLevelHideDiff = 5

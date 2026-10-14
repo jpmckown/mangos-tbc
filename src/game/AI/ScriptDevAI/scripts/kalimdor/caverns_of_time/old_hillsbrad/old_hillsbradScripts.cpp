@@ -31,6 +31,7 @@ EndContentData */
 #include "old_hillsbrad.h"
 #include "AI/ScriptDevAI/base/escort_ai.h"
 #include "AI/EventAI/CreatureEventAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h" // Fork (solo)
 
 /*######
 ## npc_erozion
@@ -342,6 +343,15 @@ struct npc_thrall_old_hillsbradAI : public npc_escortAI, private DialogueHelper
             if (Creature* pTemp = m_creature->GetMap()->GetCreature(*itr))
                 pTemp->ForcedDespawn();
         }
+    }
+
+    // Fork (solo): Thrall must survive packs that attack him directly; he takes 24% damage solo, the stock 100% with 5 players
+    void DamageTaken(Unit* dealer, uint32& damage, DamageEffectType damageType, SpellEntry const* spellInfo) override
+    {
+        if (dealer != m_creature && damageType != INSTAKILL)
+            damage = uint32(damage * EscortDamageTakenFactor(m_creature->GetMap(), 5));
+
+        npc_escortAI::DamageTaken(dealer, damage, damageType, spellInfo);
     }
 
     void CorpseRemoved(uint32& uiRespawnDelay) override

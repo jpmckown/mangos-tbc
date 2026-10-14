@@ -154,21 +154,8 @@ struct boss_baroness_anastariAI : public ScriptedAI
         else
             m_uiSilenceTimer -= uiDiff;
 
-        // Possess
-        if (m_uiPossessTimer < uiDiff)
-        {
-            if (Unit* pTarget = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 1, SPELL_POSSESS, SELECT_FLAG_PLAYER))
-            {
-                if (DoCastSpellIfCan(pTarget, SPELL_POSSESS) == CAST_OK)
-                {
-                    m_possessedPlayer = pTarget->GetObjectGuid();
-                    m_uiPossessEndTimer = 1000;
-                    m_uiPossessTimer = 30000;
-                }
-            }
-        }
-        else
-            m_uiPossessTimer -= uiDiff;
+        // Fork (solo): no Possess (17244 charms a player up to 120 s; with a pet tanking it was the only player).
+        // Rule: charm/MC of the player goes. The possess-end handling above stays and is now idle.
 
         DoMeleeAttackIfReady();
     }

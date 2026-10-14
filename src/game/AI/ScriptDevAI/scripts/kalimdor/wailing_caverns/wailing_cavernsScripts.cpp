@@ -24,6 +24,7 @@ EndScriptData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "wailing_caverns.h"
 #include "AI/ScriptDevAI/base/escort_ai.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -149,6 +150,15 @@ struct npc_disciple_of_naralexAI : public npc_escortAI
         // Reset event if can
         if (m_instance && m_instance->GetData(TYPE_DISCIPLE) != DONE)
             m_instance->SetData(TYPE_DISCIPLE, FAIL);
+    }
+
+    // Fork (solo): the Disciple must survive the ritual; scale the damage he takes with the player count (24% solo, stock at 5)
+    void DamageTaken(Unit* dealer, uint32& damage, DamageEffectType damageType, SpellEntry const* spellInfo) override
+    {
+        if (damageType != INSTAKILL)
+            damage = uint32(damage * EscortDamageTakenFactor(m_creature->GetMap(), 5));
+
+        npc_escortAI::DamageTaken(dealer, damage, damageType, spellInfo);
     }
 
     void AttackedBy(Unit* pAttacker) override

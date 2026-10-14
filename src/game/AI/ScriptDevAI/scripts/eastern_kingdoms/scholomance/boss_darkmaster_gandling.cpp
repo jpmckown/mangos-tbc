@@ -55,6 +55,17 @@ struct boss_darkmaster_gandlingAI : public ScriptedAI
         m_uiTeleportTimer = 16000;
     }
 
+    // Fork (solo): players on the threat list (pets and other creatures don't count)
+    uint32 GetThreatListPlayerCount() const
+    {
+        uint32 count = 0;
+        for (HostileReference* ref : m_creature->getThreatManager().getThreatList())
+            if (Unit* target = ref->getTarget())
+                if (target->GetTypeId() == TYPEID_PLAYER)
+                    ++count;
+        return count;
+    }
+
     void UpdateAI(const uint32 uiDiff) override
     {
         if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
@@ -93,7 +104,11 @@ struct boss_darkmaster_gandlingAI : public ScriptedAI
         {
             if (m_uiTeleportTimer < uiDiff)
             {
-                if (Unit* pTarget = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0, SPELL_SHADOW_PORTAL, SELECT_FLAG_PLAYER))
+                // Fork (solo): with fewer than 2 players fighting him, the portal would lock his only
+                // player (pet-tank case included) behind a closed gate and he would evade; skip this one
+                if (GetThreatListPlayerCount() < 2)
+                    m_uiTeleportTimer = urand(20000, 35000);
+                else if (Unit* pTarget = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0, SPELL_SHADOW_PORTAL, SELECT_FLAG_PLAYER))
                 {
                     if (DoCastSpellIfCan(pTarget, SPELL_SHADOW_PORTAL) == CAST_OK)
                     {

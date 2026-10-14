@@ -29,6 +29,10 @@ enum
     NPC_CHIEF_SANDSCALP             = 7267,
 
     NPC_SERGEANT_BLY                = 7604,
+    NPC_RAVEN                       = 7605,             // Fork (solo)
+    NPC_ORO_EYEGOUGE                = 7606,             // Fork (solo)
+    NPC_WEEGLI_BLASTFUSE            = 7607,             // Fork (solo)
+    NPC_MURTA_GRIMGUT               = 7608,             // Fork (solo)
     NPC_SANDFURY_SLAVE              = 7787,
     NPC_SANDFURY_DRUDGE             = 7788,
     NPC_SANDFURY_CRETIN             = 7789,
@@ -70,6 +74,8 @@ class instance_zulfarrak : public ScriptedInstance
         void Update(const uint32 diff) override;
 
     protected:
+        void DoOpenEndDoorIfWeegliDead();                   // Fork (solo)
+
         uint32 m_auiEncounter[MAX_ENCOUNTER];
         std::string m_strInstData;
 
@@ -77,6 +83,8 @@ class instance_zulfarrak : public ScriptedInstance
         GuidList m_lPyramidTrollsGuidList;
 
         uint32 m_uiPyramidEventTimer;
+
+        GuidList m_lPyramidSkippedTrollsGuidList;           // Fork (solo): event trolls to despawn on the next update
 };
 
 #endif

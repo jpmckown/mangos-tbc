@@ -272,6 +272,11 @@ bool ProcessEventId_event_spell_summon_raven_god(uint32 /*uiEventId*/, Object* s
             if (instance->GetSingleCreatureFromStorage(NPC_ANZU, true))
                 return true;
 
+            // Fork (solo): anyone can click the Raven's Claw (no Moonstone lock, goober event 14797);
+            // the claw closes again after 3 s, so ignore uses while the intro is already running
+            if (instance->GetSingleCreatureFromStorage(NPC_INVIS_RAVEN_GOD_TARGET, true))
+                return true;
+
             instance->StartAnzuIntro(player);
         }
     }

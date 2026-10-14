@@ -23,6 +23,7 @@ EndScriptData */
 
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "blackrock_depths.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -83,10 +84,17 @@ struct boss_ambassador_flamelashAI : public ScriptedAI
         if (m_pInstance)
             m_pInstance->SetData(TYPE_FLAMELASH, IN_PROGRESS);
 
-        m_creature->SummonCreature(NPC_FIREGUARD_DESTROYER, 919.21f, -231.029f, -50.1755f, 5.65487f, TEMPSPAWN_TIMED_OOC_DESPAWN, 300000);
-        m_creature->SummonCreature(NPC_FIREGUARD_DESTROYER, 913.883f, -236.914f, -49.8527f, 6.03884f, TEMPSPAWN_TIMED_OOC_DESPAWN, 300000);
-        m_creature->SummonCreature(NPC_FIREGUARD_DESTROYER, 924.225f, -256.302f, -49.8526f, 1.16937f, TEMPSPAWN_TIMED_OOC_DESPAWN, 300000);
-        m_creature->SummonCreature(NPC_FIREGUARD_DESTROYER, 932.524f, -252.475f, -49.8526f, 1.71042f, TEMPSPAWN_TIMED_OOC_DESPAWN, 300000);
+        // Fork (solo): S24 1 Fireguard Destroyer solo, the stock 4 with 5 players
+        static const float aDestroyerPos[4][4] =
+        {
+            {919.21f, -231.029f, -50.1755f, 5.65487f},
+            {913.883f, -236.914f, -49.8527f, 6.03884f},
+            {924.225f, -256.302f, -49.8526f, 1.16937f},
+            {932.524f, -252.475f, -49.8526f, 1.71042f},
+        };
+        uint32 destroyers = uint32(ScaleByPlayerCount(m_creature->GetMap(), 5, 1.0f, 4.0f) + 0.5f);
+        for (uint32 i = 0; i < destroyers && i < 4; ++i)
+            m_creature->SummonCreature(NPC_FIREGUARD_DESTROYER, aDestroyerPos[i][0], aDestroyerPos[i][1], aDestroyerPos[i][2], aDestroyerPos[i][3], TEMPSPAWN_TIMED_OOC_DESPAWN, 300000);
     }
 
     void JustDied(Unit* /*pKiller*/) override
@@ -128,7 +136,8 @@ struct boss_ambassador_flamelashAI : public ScriptedAI
             if (m_uiSpiritTimer[i] < uiDiff)
             {
                 DoSummonSpirit(i);
-                m_uiSpiritTimer[i] = urand(15000, 30000);
+                // Fork (solo): S24 spirits come 3x slower solo, at the stock 15-30 s with 5 players
+                m_uiSpiritTimer[i] = uint32(urand(15000, 30000) * ScaleByPlayerCount(m_creature->GetMap(), 5, 3.0f, 1.0f));
             }
             else
                 m_uiSpiritTimer[i] -= uiDiff;

@@ -23,6 +23,7 @@ EndScriptData */
 
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "gnomeregan.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"     // Fork (solo)
 
 enum
 {
@@ -200,7 +201,11 @@ struct boss_thermapluggAI : public ScriptedAI
 
         if (m_uiActivateBombTimer < uiDiff)
         {
-            if (DoCastSpellIfCan(m_creature, m_bIsPhaseTwo ? SPELL_ACTIVATE_BOMB_B : SPELL_ACTIVATE_BOMB_A) == CAST_OK)
+            // Fork (solo): one player can't fight and work the buttons at once: each face activation happens with a
+            // 40% chance solo (about one face per 30-40 s), always with 5 players. Buttons unchanged.
+            if (!RollByPlayerCount(m_creature->GetMap(), 5, 0.4f))
+                m_uiActivateBombTimer = (m_bIsPhaseTwo ? urand(6, 12) : urand(12, 17)) * IN_MILLISECONDS;
+            else if (DoCastSpellIfCan(m_creature, m_bIsPhaseTwo ? SPELL_ACTIVATE_BOMB_B : SPELL_ACTIVATE_BOMB_A) == CAST_OK)
             {
                 m_uiActivateBombTimer = (m_bIsPhaseTwo ? urand(6, 12) : urand(12, 17)) * IN_MILLISECONDS;
                 if (!urand(0, 5))                           // TODO, chance/ place for this correct?

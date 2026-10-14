@@ -24,6 +24,7 @@ EndScriptData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "AI/ScriptDevAI/base/escort_ai.h"
 #include "Entities/TemporarySpawn.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 /*#####
 ## npc_shaheen
@@ -105,6 +106,12 @@ struct npc_shaheenAI : public npc_escortAI, private DialogueHelper
     uint32 m_uiSummonCount;
 
     void Reset() override { }
+
+    // Fork (solo): the waves are sent at Sha'heen and must be pulled off her; she takes 24% damage solo, the stock 100% with 5 players
+    void DamageTaken(Unit* /*dealer*/, uint32& damage, DamageEffectType /*damageType*/, SpellEntry const* /*spellInfo*/) override
+    {
+        damage = uint32(damage * EscortDamageTakenFactor(m_creature->GetMap(), 5));
+    }
 
     void ReceiveAIEvent(AIEventType eventType, Unit* /*pSender*/, Unit* pInvoker, uint32 uiMiscValue) override
     {

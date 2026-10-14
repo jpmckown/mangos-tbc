@@ -2540,7 +2540,8 @@ void Creature::SetSpellList(uint32 spellSet)
         auto& spell = (*itr).second;
         if (spell.Availability < 100)
         {
-            if (urand(0, 100) > spell.Availability) // such spells will not be available during this spell list lifetime
+            // Fork: Availability 0 means never (urand(0, 100) > 0 kept such a spell for 1 spawn in 101)
+            if (spell.Availability <= 0 || urand(0, 100) > spell.Availability) // such spells will not be available during this spell list lifetime
             {
                 itr = m_spellList.Spells.erase(itr);
                 continue;

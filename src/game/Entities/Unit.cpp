@@ -9389,10 +9389,45 @@ bool Unit::SelectHostileTarget()
 //======================================================================
 //======================================================================
 //======================================================================
-int32 Unit::CalculateAuraDuration(SpellEntry const* spellInfo, uint32 effectMask, int32 duration, Unit const* /*caster*/)
+int32 Unit::CalculateAuraDuration(SpellEntry const* spellInfo, uint32 effectMask, int32 duration, Unit const* caster)
 {
     if (duration <= 0)
         return duration;
+
+    // Fork (solo): inside dungeons and raids a creature's crowd control on a player lasts at most
+    // Instance.CreatureCCMaxDuration (infinite auras and charms excluded)
+    if (uint32 ccCap = sWorld.getConfig(CONFIG_UINT32_INSTANCE_CREATURE_CC_MAX_DURATION))
+    {
+        if (duration > int32(ccCap) && GetTypeId() == TYPEID_PLAYER && caster && caster->GetTypeId() == TYPEID_UNIT
+            && !caster->IsPlayerControlled() && GetMap() && GetMap()->IsDungeon() && !IsPositiveSpell(spellInfo))
+        {
+            bool isCC = false;
+            for (uint32 i = 0; i < MAX_EFFECT_INDEX && !isCC; ++i)
+            {
+                if (!(effectMask & (1 << i)) || spellInfo->Effect[i] != SPELL_EFFECT_APPLY_AURA)
+                    continue;
+                switch (spellInfo->EffectApplyAuraName[i])
+                {
+                    case SPELL_AURA_MOD_STUN:
+                    case SPELL_AURA_MOD_FEAR:
+                    case SPELL_AURA_MOD_CONFUSE:
+                    case SPELL_AURA_MOD_ROOT:
+                    case SPELL_AURA_MOD_SILENCE:
+                    case SPELL_AURA_MOD_PACIFY:
+                    case SPELL_AURA_MOD_PACIFY_SILENCE:
+                        isCC = true;
+                        break;
+                    default:
+                        break;
+                }
+            }
+            const uint32 ccMechanics = convertEnumToFlag(MECHANIC_DISORIENTED, MECHANIC_FEAR, MECHANIC_ROOT, MECHANIC_PACIFY,
+                MECHANIC_SILENCE, MECHANIC_SLEEP, MECHANIC_STUN, MECHANIC_FREEZE, MECHANIC_KNOCKOUT, MECHANIC_POLYMORPH,
+                MECHANIC_BANISH, MECHANIC_SHACKLE, MECHANIC_HORROR, MECHANIC_SAPPED);
+            if (isCC || (GetSpellMechanicMask(spellInfo, effectMask) & ccMechanics))
+                duration = int32(ccCap);
+        }
+    }
 
     int32 mechanicMod = 0;
     uint32 mechanicMask = GetSpellMechanicMask(spellInfo, effectMask);

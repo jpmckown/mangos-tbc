@@ -25,9 +25,12 @@ EndScriptData */
 event_go_zulfarrak_gong
 event_spell_unlocking
 at_zulfarrak
+npc_zulfarrak_prisoner
 EndContentData */
 
+#include "AI/EventAI/CreatureEventAI.h"
 #include "AI/ScriptDevAI/include/sc_common.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 #include "zulfarrak.h"
 
 /*######
@@ -102,6 +105,26 @@ bool AreaTrigger_at_zulfarrak(Player* pPlayer, AreaTriggerEntry const* pAt)
     return false;
 }
 
+/*######
+## npc_zulfarrak_prisoner
+######*/
+
+// Fork (solo): Sergeant Bly, Raven, Oro Eyegouge, Weegli Blastfuse and Murta Grimgut keep their EventAI; while they fight
+// the pyramid trolls the damage creatures deal them scales with the player count (24% solo, stock with 5 players).
+// Damage from players (the optional fight once the crew turns hostile) is not scaled.
+struct npc_zulfarrak_prisonerAI : public CreatureEventAI
+{
+    npc_zulfarrak_prisonerAI(Creature* creature) : CreatureEventAI(creature) {}
+
+    void DamageTaken(Unit* dealer, uint32& damage, DamageEffectType damageType, SpellEntry const* spellInfo) override
+    {
+        if (damageType != INSTAKILL && dealer && !dealer->IsPlayerControlled())
+            damage = uint32(damage * EscortDamageTakenFactor(m_creature->GetMap(), 5));
+
+        CreatureEventAI::DamageTaken(dealer, damage, damageType, spellInfo);
+    }
+};
+
 void AddSC_zulfarrak()
 {
     Script* pNewScript = new Script;
@@ -117,5 +140,10 @@ void AddSC_zulfarrak()
     pNewScript = new Script;
     pNewScript->Name = "at_zulfarrak";
     pNewScript->pAreaTrigger = &AreaTrigger_at_zulfarrak;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;                                // Fork (solo)
+    pNewScript->Name = "npc_zulfarrak_prisoner";
+    pNewScript->GetAI = &GetNewAIInstance<npc_zulfarrak_prisonerAI>;
     pNewScript->RegisterSelf();
 }

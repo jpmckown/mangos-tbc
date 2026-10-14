@@ -45,6 +45,7 @@ EndContentData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "blackrock_depths.h"
 #include "AI/ScriptDevAI/base/escort_ai.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 /*######
 ## go_bar_beer_keg
@@ -491,8 +492,11 @@ struct npc_grimstoneAI : public npc_escortAI
                         {
                             m_uiPhase = PHASE_GLADIATORS;
                             SummonRingMob(NPC_THELDREN, 1, POS_NORTH);
-                            for (unsigned int i : m_uiGladiatorId)
-                                SummonRingMob(i, 1, POS_NORTH);
+                            // Fork (solo): S22 Theldren brings 1 gladiator solo, the stock 4 with 5 players
+                            // (the gladiators' heals are cut to a tenth in SOLO_DUNGEONS_BLACKROCK.sql)
+                            uint32 gladiators = uint32(ScaleByPlayerCount(m_creature->GetMap(), 5, 1.0f, float(MAX_THELDREN_ADDS)) + 0.5f);
+                            for (uint32 i = 0; i < gladiators && i < MAX_THELDREN_ADDS; ++i)
+                                SummonRingMob(m_uiGladiatorId[i], 1, POS_NORTH);
                         }
                         else
                         {
@@ -536,6 +540,40 @@ struct SummonThelrinDnd : public SpellScript
         instance_blackrock_depths* instance = dynamic_cast<instance_blackrock_depths*>(target->GetInstanceData());
         if (instance && instance->GetData(TYPE_RING_OF_LAW) != DONE && instance->GetData(TYPE_RING_OF_LAW) != SPECIAL)
             instance->SetData(TYPE_RING_OF_LAW, instance->GetData(TYPE_RING_OF_LAW) == IN_PROGRESS ? uint32(SPECIAL) : uint32(DATA_BANNER_BEFORE_EVENT));
+    }
+};
+
+// Fork (solo): A43, S23, S25 - Heal 15586 and Prayer of Healing 15585 are shared by many creatures world-wide, so the
+// boss/add heals of this dungeon are cut here instead of in spell_template: Princess Moira (on the Emperor), Vile'rel
+// (Tomb of the Seven) and the Anvilrage Medics General Angerforge's alarm summons (the static Medics are untouched)
+static const float BRD_SOLO_HEAL_FACTOR = 0.1f;
+
+struct BrdSoloHeal : public SpellScript
+{
+    void OnEffectExecute(Spell* spell, SpellEffectIndex effIdx) const override
+    {
+        if (spell->m_spellInfo->Effect[effIdx] != SPELL_EFFECT_HEAL)
+            return;
+
+        Unit* caster = spell->GetCaster();
+        if (!caster || caster->GetTypeId() != TYPEID_UNIT || caster->GetMapId() != 230)
+            return;
+
+        Creature* healer = static_cast<Creature*>(caster);
+        switch (healer->GetEntry())
+        {
+            case NPC_PRINCESS:
+            case NPC_VILEREL:
+                break;
+            case NPC_ANVILRAGE_MEDIC:
+                if (!healer->IsTemporarySummon())
+                    return;
+                break;
+            default:
+                return;
+        }
+
+        spell->SetDamage(uint32(spell->GetDamage() * BRD_SOLO_HEAL_FACTOR));
     }
 };
 
@@ -2030,5 +2068,6 @@ void AddSC_blackrock_depths()
     pNewScript->RegisterSelf();
 
     RegisterSpellScript<SummonThelrinDnd>("spell_summon_thelrin_dnd");
+    RegisterSpellScript<BrdSoloHeal>("spell_brd_solo_heal"); // Fork (solo)
     RegisterSpellScript<FiveFatFingerExplodingHeartTechnique>("spell_five_fat_finger_exploding_heart_technique");
 }

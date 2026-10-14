@@ -189,6 +189,48 @@ GameObjectAI* GetAI_go_larva_spewer(GameObject* go)
     return new go_ai_larva_spewer(go);
 }
 
+/*######
+## spell_celebras_stone_trap - 21917
+######*/
+
+// Fork (solo): quest 7046 The Scepter of Celebras. Using the Incantation of Celebras (178965) fires its linked trap
+// (178963), which casts 21917: a DUMMY aimed at a location. Spell::EffectDummy starts dbscripts_on_spell only with a
+// unit or gameobject target, so the quest credit there (command 7, delayed 25 s by QUEST_CELEBRAS_STONE_TRAP.sql)
+// never ran. Start that dbscript for each player near the trap who has the quest incomplete (player as source and
+// target, so the credit doesn't depend on the trap still existing when the delay runs out).
+enum
+{
+    SPELL_CELEBRAS_STONE_TRAP   = 21917,
+    QUEST_SCEPTER_OF_CELEBRAS   = 7046,
+};
+
+static const float CELEBRAS_TRAP_CREDIT_RANGE = 40.0f;
+
+struct CelebrasStoneTrap : public SpellScript
+{
+    void OnEffectExecute(Spell* spell, SpellEffectIndex effIdx) const override
+    {
+        if (effIdx != EFFECT_INDEX_0)
+            return;
+
+        WorldObject* trap = spell->GetTrueCaster();
+        if (!trap || !trap->IsInWorld())
+            return;
+
+        Map* map = trap->GetMap();
+        for (const auto& itr : map->GetPlayers())
+        {
+            Player* player = itr.getSource();
+            if (!player || player->GetQuestStatus(QUEST_SCEPTER_OF_CELEBRAS) != QUEST_STATUS_INCOMPLETE)
+                continue;
+            if (!player->IsWithinDistInMap(trap, CELEBRAS_TRAP_CREDIT_RANGE))
+                continue;
+
+            map->ScriptsStart(SCRIPT_TYPE_SPELL, SPELL_CELEBRAS_STONE_TRAP, player, player);
+        }
+    }
+};
+
 void AddSC_instance_maraudon()
 {
     Script* pNewScript = new Script;
@@ -200,4 +242,6 @@ void AddSC_instance_maraudon()
     pNewScript->Name = "go_larva_spewer";
     pNewScript->GetGameObjectAI = &GetAI_go_larva_spewer;
     pNewScript->RegisterSelf();
+
+    RegisterSpellScript<CelebrasStoneTrap>("spell_celebras_stone_trap"); // Fork (solo)
 }

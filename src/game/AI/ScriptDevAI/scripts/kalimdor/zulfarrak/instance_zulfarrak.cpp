@@ -23,6 +23,7 @@ EndScriptData */
 
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "zulfarrak.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 instance_zulfarrak::instance_zulfarrak(Map* pMap) : ScriptedInstance(pMap),
     m_uiPyramidEventTimer(0)
@@ -41,6 +42,7 @@ void instance_zulfarrak::OnCreatureCreate(Creature* pCreature)
     {
         case NPC_ANTUSUL:
         case NPC_SERGEANT_BLY:
+        case NPC_WEEGLI_BLASTFUSE:                          // Fork (solo): stored for the End Door fallback
             m_npcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
             break;
         case NPC_SANDFURY_SLAVE:
@@ -48,6 +50,13 @@ void instance_zulfarrak::OnCreatureCreate(Creature* pCreature)
         case NPC_SANDFURY_CRETIN:
         case NPC_SANDFURY_ACOLYTE:
         case NPC_SANDFURY_ZEALOT:
+            // Fork (solo): the pyramid event's summoned trolls scale with the player count (half solo, all with 5 players).
+            // Despawned on the next update, not inside the create callback.
+            if (GetData(TYPE_PYRAMID_EVENT) == IN_PROGRESS && pCreature->IsTemporarySummon() && !RollByPlayerCount(instance, 5, 0.5f))
+            {
+                m_lPyramidSkippedTrollsGuidList.push_back(pCreature->GetObjectGuid());
+                break;
+            }
             m_lPyramidTrollsGuidList.push_back(pCreature->GetObjectGuid());
             break;
     }
@@ -59,6 +68,7 @@ void instance_zulfarrak::OnObjectCreate(GameObject* pGo)
         m_lShallowGravesGuidList.push_back(pGo->GetObjectGuid());
     else if (pGo->GetEntry() == GO_END_DOOR)
     {
+        m_goEntryGuidStore[GO_END_DOOR] = pGo->GetObjectGuid(); // Fork (solo): stored for the End Door fallback
         if (GetData(TYPE_PYRAMID_EVENT) == DONE)
             pGo->SetGoState(GO_STATE_ACTIVE);
     }
@@ -91,7 +101,10 @@ void instance_zulfarrak::SetData(uint32 uiType, uint32 uiData)
             if (uiData == IN_PROGRESS)
                 m_uiPyramidEventTimer = 20000;
             else if (uiData == DONE)
+            {
                 m_uiPyramidEventTimer = 0;
+                DoOpenEndDoorIfWeegliDead();                // Fork (solo)
+            }
             break;
         default:
             return;
@@ -187,11 +200,45 @@ void instance_zulfarrak::OnCreatureDeath(Creature* pCreature)
         case NPC_NEKRUM: SetData(TYPE_NEKRUM, DONE); break;
         case NPC_SEZZZIZ: SetData(TYPE_SEZZZIZ, DONE); break;
         case NPC_CHIEF_SANDSCALP: SetData(TYPE_CHIEF_SANDSCALP, DONE); break;
+        case NPC_WEEGLI_BLASTFUSE: DoOpenEndDoorIfWeegliDead(); break; // Fork (solo)
+    }
+}
+
+// Fork (solo): only Weegli's barrel opens the End Door to Ukorz. If he is dead once the pyramid event is done,
+// open it here so the last two bosses stay reachable.
+void instance_zulfarrak::DoOpenEndDoorIfWeegliDead()
+{
+    if (GetData(TYPE_PYRAMID_EVENT) != DONE)
+        return;
+
+    // Not found counts as dead: a dead creature can leave the map until its respawn
+    Creature* weegli = GetSingleCreatureFromStorage(NPC_WEEGLI_BLASTFUSE, true);
+    if (weegli && weegli->IsAlive())
+        return;
+
+    if (GameObject* door = GetSingleGameObjectFromStorage(GO_END_DOOR))
+    {
+        if (door->GetGoState() != GO_STATE_ACTIVE)
+            door->SetGoState(GO_STATE_ACTIVE);
     }
 }
 
 void instance_zulfarrak::Update(uint32 uiDiff)
 {
+    // Fork (solo): despawn the event trolls skipped for a small group (see OnCreatureCreate)
+    if (!m_lPyramidSkippedTrollsGuidList.empty())
+    {
+        for (ObjectGuid const& guid : m_lPyramidSkippedTrollsGuidList)
+        {
+            if (Creature* troll = instance->GetCreature(guid))
+            {
+                if (troll->IsAlive() && !troll->IsInCombat())
+                    troll->ForcedDespawn();
+            }
+        }
+        m_lPyramidSkippedTrollsGuidList.clear();
+    }
+
     if (m_uiPyramidEventTimer)
     {
         if (m_uiPyramidEventTimer <= uiDiff)
@@ -216,6 +263,7 @@ void instance_zulfarrak::Update(uint32 uiDiff)
                 if (pTroll->GetVictim() || !pTroll->IsAlive())
                 {
                     m_uiPyramidEventTimer = urand(0, 2) ? urand(3000, 10000) : 1000;
+                    m_uiPyramidEventTimer = uint32(m_uiPyramidEventTimer * ScaleByPlayerCount(instance, 5, 2.0f, 1.0f)); // Fork (solo): x2 solo, stock with 5
                     return;
                 }
 
@@ -235,6 +283,7 @@ void instance_zulfarrak::Update(uint32 uiDiff)
                 }
             }
             m_uiPyramidEventTimer = urand(0, 2) ? urand(3000, 10000) : 1000;
+            m_uiPyramidEventTimer = uint32(m_uiPyramidEventTimer * ScaleByPlayerCount(instance, 5, 2.0f, 1.0f)); // Fork (solo): x2 solo, stock with 5
         }
         else
             m_uiPyramidEventTimer -= uiDiff;

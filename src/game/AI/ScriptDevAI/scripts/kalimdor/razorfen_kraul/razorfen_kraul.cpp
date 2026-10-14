@@ -28,6 +28,7 @@ EndContentData */
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "AI/ScriptDevAI/base/escort_ai.h"
 #include "AI/ScriptDevAI/base/pet_ai.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 /*######
 ## npc_willix_the_importer
@@ -68,6 +69,15 @@ struct npc_willix_the_importerAI : public npc_escortAI
     npc_willix_the_importerAI(Creature* m_creature) : npc_escortAI(m_creature) { Reset(); }
 
     void Reset() override {}
+
+    // Fork (solo): Willix must survive the escort; scale the damage he takes with the player count (24% solo, stock at 5)
+    void DamageTaken(Unit* dealer, uint32& damage, DamageEffectType damageType, SpellEntry const* spellInfo) override
+    {
+        if (damageType != INSTAKILL)
+            damage = uint32(damage * EscortDamageTakenFactor(m_creature->GetMap(), 5));
+
+        npc_escortAI::DamageTaken(dealer, damage, damageType, spellInfo);
+    }
 
     // Exact use of these texts remains unknown, it seems that he should only talk when he initiates the attack or he is the first who is attacked by a npc
     void Aggro(Unit* pWho) override

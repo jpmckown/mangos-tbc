@@ -22,6 +22,7 @@ SDCategory: Blackrock Depths
 EndScriptData */
 
 #include "AI/ScriptDevAI/include/sc_common.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -94,9 +95,13 @@ struct boss_general_angerforgeAI : public ScriptedAI
             {
                 DoScriptText(EMOTE_ALARM, m_creature);
 
-                for (uint8 i = 0; i < NPC_NORMAL_AMOUNT; i++)
+                // Fork (solo): S23 the alarm scales with the player count: 3 Reservists + 1 Medic solo,
+                // the stock 8 + 2 with 5 players (the Medics' heals are cut to a tenth by spell_brd_solo_heal)
+                uint32 reservists = uint32(ScaleByPlayerCount(m_creature->GetMap(), 5, 3.0f, float(NPC_NORMAL_AMOUNT)) + 0.5f);
+                uint32 medics = uint32(ScaleByPlayerCount(m_creature->GetMap(), 5, 1.0f, float(NPC_ELITE_AMOUNT)) + 0.5f);
+                for (uint32 i = 0; i < reservists; i++)
                     SummonAdd(NPC_ANVILRAGE_RESERVIST);
-                for (uint8 i = 0; i < NPC_ELITE_AMOUNT; i++)
+                for (uint32 i = 0; i < medics; i++)
                     SummonAdd(NPC_ANVILRAGE_MEDIC);
 
                 m_uiAlarmTimer = 3 * MINUTE * IN_MILLISECONDS;

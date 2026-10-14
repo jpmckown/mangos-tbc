@@ -75,6 +75,7 @@ enum
 
     MAX_STADIUM_WAVES           = 7,
     MAX_STADIUM_MOBS_PER_WAVE   = 5,
+    MAX_UROK_SPAWNS             = 11,                       // Fork (solo): S28 Urok's 10 ogres + Urok
 
     FACTION_BLACK_DRAGON        = 103
 };
@@ -177,6 +178,7 @@ class instance_blackrock_spire : public ScriptedInstance, private DialogueHelper
         void GetIncarceratorGUIDList(GuidList& lList) const { lList = m_lIncarceratorGUIDList; }
 
         void StartflamewreathEventIfCan();
+        void StartUrokChallenge(Player* pPlayer);           // Fork (solo): S28
 
         void Update(const uint32 diff) override;
 
@@ -187,6 +189,7 @@ class instance_blackrock_spire : public ScriptedInstance, private DialogueHelper
         void JustDidDialogueStep(int32 iEntry) override;
         void DoSendNextStadiumWave();
         void DoSendNextFlamewreathWave();
+        void DoUpdateUrokChallenge(uint32 uiDiff);          // Fork (solo): S28
 
         bool m_bUpperDoorOpened;
 
@@ -200,6 +203,13 @@ class instance_blackrock_spire : public ScriptedInstance, private DialogueHelper
         uint32 m_uiStadiumEventTimer;
         uint8 m_uiStadiumWaves;
         uint8 m_uiStadiumMobsAlive;
+
+        // Fork (solo): S28 Urok Doomhowl's challenge (the summons moved from dbscripts_on_event 4845)
+        bool m_bUrokChallengeActive;
+        uint32 m_uiUrokElapsed;
+        uint32 m_uiUrokNextSpawn;
+        uint32 m_auiUrokDelay[MAX_UROK_SPAWNS];
+        ObjectGuid m_urokChallengerGuid;
 
         ObjectGuid m_aRoomRuneGuid[MAX_ROOMS];
         GuidList m_alRoomEventMobGUIDSorted[MAX_ROOMS];

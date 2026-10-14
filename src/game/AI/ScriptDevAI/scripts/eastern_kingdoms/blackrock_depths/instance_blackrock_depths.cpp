@@ -23,6 +23,14 @@ EndScriptData */
 
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "blackrock_depths.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
+
+// Fork (solo): S25 Tomb of the Seven - the next dwarf joins when the last one dies or after this interval:
+// 90 s with one player, the stock 30 s with 5 or more
+static uint32 GetDwarfCallInterval(Map const* map)
+{
+    return uint32(ScaleByPlayerCount(map, 5, 90000.0f, 30000.0f));
+}
 
 instance_blackrock_depths::instance_blackrock_depths(Map* pMap) : ScriptedInstance(pMap),
     m_bIsBarDoorOpen(false),
@@ -594,7 +602,7 @@ void instance_blackrock_depths::DoCallNextDwarf()
             pDwarf->AI()->AttackStart(pPlayer);
         }
     }
-    m_uiDwarfFightTimer = 30000;
+    m_uiDwarfFightTimer = GetDwarfCallInterval(instance); // Fork (solo): stock 30000
     ++m_uiDwarfRound;
 }
 
@@ -770,8 +778,7 @@ void instance_blackrock_depths::Update(uint32 uiDiff)
         {
             if (m_uiDwarfRound < MAX_DWARFS)
             {
-                DoCallNextDwarf();
-                m_uiDwarfFightTimer = 30000;
+                DoCallNextDwarf();                          // Fork (solo): sets the next interval itself (stock reset it to 30000 here)
             }
             else
                 m_uiDwarfFightTimer = 0;

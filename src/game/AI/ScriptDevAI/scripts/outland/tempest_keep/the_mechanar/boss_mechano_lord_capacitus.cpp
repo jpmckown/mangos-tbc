@@ -201,6 +201,12 @@ struct PolarityShiftCapacitus : public SpellScript
 
         unitTarget->RemoveAurasDueToSpell(39088);
         unitTarget->RemoveAurasDueToSpell(39091);
+
+        // Fork (solo): only players take a charge, so a lone player's pet or guardian never gets the opposite one
+        // (player and pet would hurt each other every 5 s). The pairing continues with the next player.
+        if (unitTarget->GetTypeId() != TYPEID_PLAYER)
+            return;
+
         uint64 scriptValue = 0;
 
         // 39088 39091

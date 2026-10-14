@@ -582,6 +582,7 @@ void World::LoadConfigSettings(bool reload)
     setConfig(CONFIG_UINT32_RABBIT_DAY, "RabbitDay", 0);
 
     setConfig(CONFIG_UINT32_INSTANCE_RESET_TIME_HOUR, "Instance.ResetTimeHour", 4);
+    setConfig(CONFIG_UINT32_INSTANCE_CREATURE_CC_MAX_DURATION, "Instance.CreatureCCMaxDuration", 3000); // Fork (solo)
     setConfig(CONFIG_UINT32_INSTANCE_UNLOAD_DELAY,    "Instance.UnloadDelay", 30 * MINUTE * IN_MILLISECONDS);
     setConfig(CONFIG_BOOL_DISABLE_INSTANCE_RELOCATE, "Instance.DisableRelocate", false);
 

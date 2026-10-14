@@ -25,6 +25,7 @@ EndScriptData */
 #include "Globals/SharedDefines.h"
 #include "scarlet_monastery.h"
 #include "AI/ScriptDevAI/base/CombatAI.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"     // Fork (solo)
 
 enum
 {
@@ -52,6 +53,10 @@ enum
     SPELL_HOLYSMITE              = 9481,
     SPELL_HEAL                   = 12039,
     SPELL_POWERWORDSHIELD        = 22187,
+
+    // Fork (solo): Heal 12039 heals 590-684 (BasePoints 589 + 1d95); a custom basepoint b heals b..b+94
+    HEAL_STOCK_AVERAGE           = 637,
+    HEAL_DICE_AVERAGE            = 47,
 
     NPC_SCARLET_ABBOT               = 4303,
     NPC_SCARLET_MONK                = 4540,
@@ -433,7 +438,9 @@ struct boss_high_inquisitor_whitemaneAI : public CombatAI
         ResetCombatAction(WHITEMANE_ACTION_HEAL, GetSubsequentActionTimer(WHITEMANE_ACTION_HEAL));
         ResetCombatAction(WHITEMANE_ACTION_POWERWORD_SHIELD, GetSubsequentActionTimer(WHITEMANE_ACTION_POWERWORD_SHIELD));
         ResetCombatAction(WHITEMANE_ACTION_HOLY_SMITE, GetSubsequentActionTimer(WHITEMANE_ACTION_HOLY_SMITE));
-        ResetCombatAction(WHITEMANE_ACTION_DOMINATE_MIND, GetSubsequentActionTimer(WHITEMANE_ACTION_DOMINATE_MIND));
+        // Fork (solo): Dominate Mind (15 s charm of the player) is no longer armed: solo it took the bosses' only
+        // target, so they evaded and the encounter reset; with a pet the player fought their own pet.
+        // ResetCombatAction(WHITEMANE_ACTION_DOMINATE_MIND, GetSubsequentActionTimer(WHITEMANE_ACTION_DOMINATE_MIND));
         SetCombatScriptStatus(false);
         SetCombatMovement(true, true);
         SetMeleeEnabled(true);
@@ -453,7 +460,17 @@ struct boss_high_inquisitor_whitemaneAI : public CombatAI
             {
                 if (Unit* target = DoSelectLowestHpFriendly(50.0f))
                 {
-                    if (DoCastSpellIfCan(target, SPELL_HEAL) == CAST_OK)
+                    // Fork (solo): boss heals to a tenth solo (about 64 on average instead of 637), the stock amount
+                    // with 5 players. Cast with a custom basepoint, so the checks of DoCastSpellIfCan are done here.
+                    if (m_creature->IsNonMeleeSpellCasted(false))
+                        return;
+                    SpellEntry const* healInfo = sSpellTemplate.LookupEntry<SpellEntry>(SPELL_HEAL);
+                    if (!healInfo || CanCastSpell(target, healInfo, false) != CAST_OK)
+                        return;
+                    float factor = ScaleByPlayerCount(m_creature->GetMap(), 5, 0.1f, 1.0f);
+                    int32 basePoints = std::max(1, int32(float(HEAL_STOCK_AVERAGE) * factor + 0.5f) - int32(HEAL_DICE_AVERAGE));
+                    m_creature->InterruptSpell(CURRENT_MELEE_SPELL);
+                    if (m_creature->CastCustomSpell(target, healInfo, &basePoints, nullptr, nullptr, TRIGGERED_NORMAL_COMBAT_CAST) == SPELL_CAST_OK)
                         ResetCombatAction(action, GetSubsequentActionTimer(action));
                 }
                 return;
@@ -496,7 +513,7 @@ struct boss_high_inquisitor_whitemaneAI : public CombatAI
             {
                 if (!urand(0, 50))
                     if (Unit* target = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0, SPELL_DOMINATEMIND, SELECT_FLAG_PLAYER))
-                        if (DoCastSpellIfCan(target, SPELL_DOMINATEMIND))
+                        if (DoCastSpellIfCan(target, SPELL_DOMINATEMIND) == CAST_OK) // Fork (solo): upstream tested the result as a bool, true on failure (CAST_OK = 0)
                             ResetCombatAction(action, urand(20000, 30000));
                 return;
             }

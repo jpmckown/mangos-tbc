@@ -23,6 +23,7 @@ EndScriptData */
 
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "uldaman.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum
 {
@@ -62,7 +63,7 @@ struct boss_archaedasAI : public ScriptedAI
     {
         m_uiAwakeningTimer  = 1000;
         m_uiSubevent        = 0;
-        m_uiAwakeDwarfTimer = 10000;
+        m_uiAwakeDwarfTimer = GetAwakeDwarfTimer(10000, 10000); // Fork (solo): stock 10000
         m_uiTremorTimer     = urand(7000, 14000);
         m_bDwarvesAwaken    = false;
         m_uiHpPhaseCheck    = 1;
@@ -75,6 +76,16 @@ struct boss_archaedasAI : public ScriptedAI
     {
         if (m_pInstance)
             m_pInstance->SetData(TYPE_ARCHAEDAS, IN_PROGRESS);
+
+        // Fork (solo): Reset() runs before any player is near, so set the first dwarf timer with the real player count
+        m_uiAwakeDwarfTimer = GetAwakeDwarfTimer(10000, 10000);
+    }
+
+    // Fork (solo): a lone player's slower kill wakes many more dwarves than a group sees, so the
+    // dwarf timer scales with the player count: x3 solo (27-36 s), stock 9-12 s with 5 players
+    uint32 GetAwakeDwarfTimer(uint32 minTimer, uint32 maxTimer) const
+    {
+        return uint32(urand(minTimer, maxTimer) * ScaleByPlayerCount(m_creature->GetMap(), 5, 3.0f, 1.0f));
     }
 
     void KilledUnit(Unit* /*pVictim*/) override
@@ -159,7 +170,7 @@ struct boss_archaedasAI : public ScriptedAI
                 if (Creature* pEarthen = m_pInstance->GetClosestDwarfNotInCombat(m_creature))
                 {
                     if (DoCastSpellIfCan(pEarthen, SPELL_AWAKEN_EARTHEN_DWARF) == CAST_OK)
-                        m_uiAwakeDwarfTimer = urand(9000, 12000);
+                        m_uiAwakeDwarfTimer = GetAwakeDwarfTimer(9000, 12000); // Fork (solo): stock urand(9000, 12000)
                 }
                 else
                     m_bDwarvesAwaken = true;

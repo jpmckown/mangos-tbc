@@ -30,6 +30,7 @@ EndContentData */
 #include "gnomeregan.h"
 #include "AI/ScriptDevAI/base/escort_ai.h"
 #include "AI/ScriptDevAI/base/follower_ai.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"     // Fork (solo)
 
 /*######
 ## npc_blastmaster_emi_shortfuse
@@ -162,14 +163,28 @@ struct npc_blastmaster_emi_shortfuseAI : public npc_escortAI
 
     void DoSummonPack(uint8 uiIndex)
     {
+        // Fork (solo): the Ambusher waves thin out with fewer players: each Caverndeep Ambusher comes with a
+        // 35% chance solo, always with 5 players. Other entries (the Burrower, Grubbis and Chomper) always come,
+        // and a wave never ends up empty.
+        std::vector<sSummonInformation const*> pack;
+        std::vector<sSummonInformation const*> skipped;
         for (const auto& i : asSummonInfo)
         {
             // This requires order of the array
             if (i.uiPosition > uiIndex)
                 break;
-            if (i.uiPosition == uiIndex)
-                m_creature->SummonCreature(i.uiEntry, i.fX, i.fY, i.fZ, i.fO, TEMPSPAWN_DEAD_DESPAWN, 0);
+            if (i.uiPosition != uiIndex)
+                continue;
+            if (i.uiEntry == NPC_CAVERNDEEP_AMBUSHER && !RollByPlayerCount(m_creature->GetMap(), 5, 0.35f))
+                skipped.push_back(&i);
+            else
+                pack.push_back(&i);
         }
+        if (pack.empty() && !skipped.empty())
+            pack.push_back(skipped[urand(0, skipped.size() - 1)]);
+
+        for (sSummonInformation const* i : pack)
+            m_creature->SummonCreature(i->uiEntry, i->fX, i->fY, i->fZ, i->fO, TEMPSPAWN_DEAD_DESPAWN, 0);
     }
 
     void JustSummoned(Creature* pSummoned) override
@@ -239,6 +254,12 @@ struct npc_blastmaster_emi_shortfuseAI : public npc_escortAI
 
         if (!urand(0, 2))
             DoScriptText(urand(0, 1) ? SAY_AGGRO_1 : SAY_AGGRO_2, m_creature, pAttacker);
+    }
+
+    // Fork (solo): Emi must survive while the players fight; she takes 24% damage solo, the stock 100% with 5 players
+    void DamageTaken(Unit* /*dealer*/, uint32& damage, DamageEffectType /*damageType*/, SpellEntry const* /*spellInfo*/) override
+    {
+        damage = uint32(damage * EscortDamageTakenFactor(m_creature->GetMap(), 5));
     }
 
     void JustDied(Unit* /*pKiller*/) override

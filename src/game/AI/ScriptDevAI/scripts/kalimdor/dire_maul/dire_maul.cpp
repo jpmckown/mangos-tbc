@@ -28,6 +28,7 @@ DreadsteedQuestObjects
 EndContentData */
 
 #include "AI/ScriptDevAI/include/sc_common.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h" // Fork (solo)
 #include "dire_maul.h"
 
 /*######
@@ -90,6 +91,12 @@ enum
     SUMMON_WAVES_RELAY_SCRIPT_START_ID = 1450100,
 };
 
+// Fork (solo): the ritual is built for a five-player group. Fewer players get fewer demon waves (half of them solo:
+// waves 1, 3, 5, 7 and 9) and more time between object deactivations (twice as long solo: 60-90 s).
+static const uint32 RITUAL_GROUP_SIZE           = 5;
+static const float  RITUAL_WAVE_SHARE_SOLO      = 0.5f;
+static const float  RITUAL_DEACTIVATE_MULT_SOLO = 2.0f;
+
 static const float pedestalCords[3] = { -38.5f, 811.8f, -29.5f};
 
 struct npc_warlock_mount_ritualAI : public  Scripted_NoMovementAI
@@ -104,6 +111,7 @@ struct npc_warlock_mount_ritualAI : public  Scripted_NoMovementAI
     uint8 m_uiPhase;
     uint32 m_uiPhaseTimer;
     uint32 m_uiDeactivateTimer;
+    float m_fWaveCredit;                                    // Fork (solo)
     GuidList m_luiSummonedMobGUIDs;
 
     void Reset() override
@@ -111,11 +119,18 @@ struct npc_warlock_mount_ritualAI : public  Scripted_NoMovementAI
         m_uiPhase = 0;
         m_uiPhaseTimer = 48000;
         m_uiDeactivateTimer = 70000;
+        m_fWaveCredit = 0.5f;                               // Fork (solo): so the first wave always comes
     }
 
     void DoSummonPack(uint8 uiIndex)
     {
-        m_creature->GetMap()->ScriptsStart(SCRIPT_TYPE_RELAY, SUMMON_WAVES_RELAY_SCRIPT_START_ID + uiIndex, m_creature, m_creature);
+        // Fork (solo): each wave adds the player-count share; a wave is summoned once a whole wave is owed
+        m_fWaveCredit += ScaleByPlayerCount(m_creature->GetMap(), RITUAL_GROUP_SIZE, RITUAL_WAVE_SHARE_SOLO, 1.0f);
+        if (m_fWaveCredit >= 1.0f)
+        {
+            m_fWaveCredit -= 1.0f;
+            m_creature->GetMap()->ScriptsStart(SCRIPT_TYPE_RELAY, SUMMON_WAVES_RELAY_SCRIPT_START_ID + uiIndex, m_creature, m_creature);
+        }
         m_pInstance->DoRespawnGameObject(m_pInstance->GetRitualSymbolGuids().at(uiIndex - 1), 900);
     }
 
@@ -215,7 +230,8 @@ struct npc_warlock_mount_ritualAI : public  Scripted_NoMovementAI
                 }
             }
 
-            m_uiDeactivateTimer = urand(30000, 45000);
+            // Fork (solo): stretched with fewer players (60-90 s solo)
+            m_uiDeactivateTimer = uint32(urand(30000, 45000) * ScaleByPlayerCount(m_creature->GetMap(), RITUAL_GROUP_SIZE, RITUAL_DEACTIVATE_MULT_SOLO, 1.0f));
         }
         else
             m_uiDeactivateTimer -= diff;

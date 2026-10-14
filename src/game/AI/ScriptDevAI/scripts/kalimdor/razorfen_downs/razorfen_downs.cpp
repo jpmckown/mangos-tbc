@@ -27,6 +27,7 @@ EndContentData */
 
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "AI/ScriptDevAI/base/escort_ai.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 /*###
 # npc_belnistrasz
@@ -101,6 +102,15 @@ struct npc_belnistraszAI : public npc_escortAI
         m_uiFrostNovaTimer = 6000;
     }
 
+    // Fork (solo): Belnistrasz must survive the ritual; scale the damage he takes with the player count (24% solo, stock at 5)
+    void DamageTaken(Unit* dealer, uint32& damage, DamageEffectType damageType, SpellEntry const* spellInfo) override
+    {
+        if (damageType != INSTAKILL)
+            damage = uint32(damage * EscortDamageTakenFactor(m_creature->GetMap(), 5));
+
+        npc_escortAI::DamageTaken(dealer, damage, damageType, spellInfo);
+    }
+
     void AttackedBy(Unit* pAttacker) override
     {
         if (HasEscortState(STATE_ESCORT_PAUSED))
@@ -144,6 +154,9 @@ struct npc_belnistraszAI : public npc_escortAI
                     uiEntry = NPC_WITHERED_QUILGUARD;
                     break;
                 case 3:
+                    // Fork (solo): the second elite (the Geomancer) scales with the player count: never solo, always with 5
+                    if (!RollByPlayerCount(m_creature->GetMap(), 5, 0.0f))
+                        continue;
                     uiEntry = NPC_DEATHS_HEAD_GEOMANCER;
                     break;
             }

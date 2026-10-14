@@ -33,4 +33,11 @@ inline bool RollByPlayerCount(Map const* map, uint32 raidSize, float soloChance)
     return roll_chance_f(100.0f * ScaleByPlayerCount(map, raidSize, soloChance, 1.0f));
 }
 
+// Escort and event NPCs that must survive while the players fight (Hyjal's Jaina/Thrall, dungeon escorts):
+// multiply the damage they take by this. 24% with one player, the stock 100% with `groupSize` or more.
+inline float EscortDamageTakenFactor(Map const* map, uint32 groupSize)
+{
+    return ScaleByPlayerCount(map, groupSize, 0.24f, 1.0f);
+}
+
 #endif

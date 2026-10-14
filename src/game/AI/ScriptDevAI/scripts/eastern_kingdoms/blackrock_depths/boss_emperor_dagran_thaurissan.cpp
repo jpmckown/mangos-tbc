@@ -23,6 +23,7 @@ EndScriptData */
 
 #include "AI/ScriptDevAI/include/sc_common.h"
 #include "blackrock_depths.h"
+#include "AI/ScriptDevAI/include/sc_solo_scaling.h"
 
 enum eEmperor
 {
@@ -99,8 +100,10 @@ struct boss_emperor_dagran_thaurissanAI : public ScriptedAI
         {
             if (Unit* pTarget = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0))
             {
+                // Fork (solo): S26 the stun itself is held to 3 s by Instance.CreatureCCMaxDuration; solo it is also
+                // recast half as often (10-20 s), the stock 5-10 s with 5 players
                 if (DoCastSpellIfCan(pTarget, SPELL_HANDOFTHAURISSAN) == CAST_OK)
-                    m_uiHandOfThaurissanTimer = urand(5, 10) * 1000;
+                    m_uiHandOfThaurissanTimer = uint32(urand(5, 10) * 1000 * ScaleByPlayerCount(m_creature->GetMap(), 5, 2.0f, 1.0f));
             }
         }
         else

@@ -277,7 +277,8 @@ struct HexOfJammalanAura : public AuraScript // s.12479
             if (Unit* caster = aura->GetCaster())
             {
                 caster->CastSpell(target, 12480, TRIGGERED_OLD_TRIGGERED);
-                caster->CastSpell(target, 12483, TRIGGERED_OLD_TRIGGERED);
+                // Fork (solo): no 12483 (15 s MOD_CHARM): the charmed player dropped off Jammal'an's threat list,
+                // so solo he evaded and reset; with a pet out the player attacked it at +400% damage (12480 stays)
             }
     }
 };
