@@ -9415,13 +9415,14 @@ int32 Unit::CalculateAuraDuration(SpellEntry const* spellInfo, uint32 effectMask
                     case SPELL_AURA_MOD_SILENCE:
                     case SPELL_AURA_MOD_PACIFY:
                     case SPELL_AURA_MOD_PACIFY_SILENCE:
+                    case SPELL_AURA_MOD_DISARM:             // Fork (solo): BRD warriors chained three 6 s disarms
                         isCC = true;
                         break;
                     default:
                         break;
                 }
             }
-            const uint32 ccMechanics = convertEnumToFlag(MECHANIC_DISORIENTED, MECHANIC_FEAR, MECHANIC_ROOT, MECHANIC_PACIFY,
+            const uint32 ccMechanics = convertEnumToFlag(MECHANIC_DISORIENTED, MECHANIC_DISARM, MECHANIC_FEAR, MECHANIC_ROOT, MECHANIC_PACIFY,
                 MECHANIC_SILENCE, MECHANIC_SLEEP, MECHANIC_STUN, MECHANIC_FREEZE, MECHANIC_KNOCKOUT, MECHANIC_POLYMORPH,
                 MECHANIC_BANISH, MECHANIC_SHACKLE, MECHANIC_HORROR, MECHANIC_SAPPED);
             if (isCC || (GetSpellMechanicMask(spellInfo, effectMask) & ccMechanics))

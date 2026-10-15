@@ -1496,6 +1496,11 @@ void Spell::DoSpellHitOnUnit(Unit* unit, uint32 effectMask, TargetInfo* target, 
                     return;
                 }
             }
+            // Fork (solo): spells without a diminishing group still get the shorter duration Unit::CalculateAuraDuration
+            // worked out (mechanic duration mods, the Instance.CreatureCCMaxDuration cap); before, only DR'd spells did,
+            // so e.g. a Shrieking Banshee's 8 s silence or Ramstein's 6 s Knockout ignored the cap
+            else if (duration > 0 && target->effectDuration > 0 && target->effectDuration < duration)
+                duration = target->effectDuration;
 
             if (duration != originalDuration)
             {

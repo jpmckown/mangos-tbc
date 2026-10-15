@@ -720,7 +720,7 @@ LogColors = ""
 #
 #    Instance.CreatureCCMaxDuration
 #        Fork (solo play): longest crowd control (stun, fear, sleep, polymorph, banish, root, silence, pacify,
-#        disorient...) a creature can put on a player inside a dungeon or raid, in milliseconds.
+#        disarm, disorient...) a creature can put on a player inside a dungeon or raid, in milliseconds.
 #        Infinite-duration auras and charms are not affected.
 #        Default: 3000
 #                 0 (off, stock durations)
