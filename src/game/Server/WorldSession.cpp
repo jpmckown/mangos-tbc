@@ -341,6 +341,20 @@ void WorldSession::ProcessByteBufferException(WorldPacket const& packet)
         DEBUG_LOG("Dumping error causing packet:");
         packet.hexlike();
     }
+    else if (packet.GetOpcode() == CMSG_MESSAGECHAT)
+    {
+        // Fork (temporary, 2026-10-13): name the client addon whose chat packets fail the UTF-8 check
+        std::string hex, text;
+        for (size_t i = 0; i < packet.size() && i < 256; ++i)
+        {
+            uint8 const b = packet.contents()[i];
+            char buf[4];
+            snprintf(buf, sizeof(buf), "%02X ", b);
+            hex += buf;
+            text += (b >= 32 && b < 127) ? char(b) : '.';
+        }
+        sLog.outError("ChatPacketDiag: %u bytes | %s| %s", uint32(packet.size()), hex.c_str(), text.c_str());
+    }
 
     if (sWorld.getConfig(CONFIG_BOOL_KICK_PLAYER_ON_BAD_PACKET))
     {
