@@ -1638,6 +1638,30 @@ void Player::Heartbeat()
 {
     Unit::Heartbeat();
     SendUpdateToOutOfRangeGroupMembers();
+
+    // Fork (solo): zone blessings (spell_area autocasts) are only applied on a zone/area change, so one lost mid-run
+    // (death and resurrection in place, ...) stayed gone for the rest of the instance. Re-apply missing ones here.
+    if (IsAlive() && IsInWorld() && GetMap()->IsDungeon())
+    {
+        for (uint32 areaId : { m_zoneUpdateId, m_areaUpdateId })
+        {
+            SpellAreaForAreaMapBounds saBounds = sSpellMgr.GetSpellAreaForAreaMapBounds(areaId);
+            for (SpellAreaForAreaMap::const_iterator itr = saBounds.first; itr != saBounds.second; ++itr)
+            {
+                SpellArea const* spellArea = itr->second;
+                if (!spellArea->autocast || HasAura(spellArea->spellId))
+                    continue;
+                spellArea->ApplyOrRemoveSpellIfCan(this, m_zoneUpdateId, areaId == m_zoneUpdateId ? 0 : m_areaUpdateId, true);
+#ifdef ENABLE_PLAYERBOTS
+                if (!GetPlayerbotAI())
+#endif
+                    if (HasAura(spellArea->spellId))    // Fork (temporary): BlessingDiag
+                        sLog.outError("BlessingDiag: %s re-applied %u (map %u zone %u area %u)", GetName(), spellArea->spellId, GetMapId(), m_zoneUpdateId, m_areaUpdateId);
+            }
+            if (m_areaUpdateId == m_zoneUpdateId)
+                break;
+        }
+    }
 }
 
 #ifdef ENABLE_PLAYERBOTS

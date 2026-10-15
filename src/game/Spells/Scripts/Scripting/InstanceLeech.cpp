@@ -14,6 +14,17 @@ enum LeechSpells
     SPELL_ENCOUNTER_COMBAT_BOOST = 55012, // copy of 55006 (40-man tier)
 };
 
+// Fork (solo): leech share by blessing tier (the user, 2026-10-15). A 5-man blessing only doubles damage, so 5% of it
+// couldn't keep a non-healer alive against a Stratholme pack of 5; the raid tiers multiply damage by 3.5-13x already.
+static float LeechShare(Unit const* player)
+{
+    if (player->HasAura(55032) || player->HasAura(55002)) // 5-man Combat Boost (normal / heroic)
+        return 0.20f;
+    if (player->HasAura(55003))                           // 10-man Combat Boost (Karazhan, Zul'Aman, LBRS/UBRS)
+        return 0.10f;
+    return 0.05f;                                         // 20/25/40-man tiers and the world-boss encounter copy
+}
+
 // Every bound UnitScript runs on every damage event, so each script instance must only react to
 // its own aura. Binding one instance to several spell_scripts rows (or several instances to the same
 // aura) would heal once per binding.
@@ -54,8 +65,8 @@ struct InstanceLeechOnDamageHealing : public UnitScript, public AuraScript {
 
         Unit* player = isPet ? attacker->GetOwner() : attacker;
         if (!player->HasAura(AuraId)) return;
-        auto leech_heal = static_cast<int32>(0.05f * float(damage));
-        if (leech_heal <= 0) return; // hits under 20 damage would heal 0 (combat log spam)
+        auto leech_heal = static_cast<int32>(LeechShare(player) * float(damage));
+        if (leech_heal <= 0) return; // tiny hits would heal 0 (combat log spam)
         if (!player->IsAlive()) return; // DoTs keep ticking after death; DealHeal would revive
         // Heal directly like Spell's health leech: no SMSG_SPELL_GO, so no cast visual/sound on every hit.
         // DealHeal still sends SMSG_SPELLHEALLOG under SPELL_HEAL for the combat text.

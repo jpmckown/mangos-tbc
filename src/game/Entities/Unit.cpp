@@ -5732,6 +5732,20 @@ void Unit::RemoveSpellAuraHolder(SpellAuraHolder* holder, AuraRemoveMode mode)
 {
     MANGOS_ASSERT(!holder->IsDeleted());
 
+    // Fork (temporary): BlessingDiag - a real player losing an instance blessing (the user lost theirs mid-Stratholme, 2026-10-14)
+    {
+        uint32 const id = holder->GetId();
+        if (GetTypeId() == TYPEID_PLAYER && mode != AURA_REMOVE_BY_DELETE && ((id >= 55000 && id <= 55006) || (id >= 55010 && id <= 55012) || id == 55032))
+        {
+            Player* player = static_cast<Player*>(this);
+#ifdef ENABLE_PLAYERBOTS
+            if (!player->GetPlayerbotAI())
+#endif
+                sLog.outError("BlessingDiag: %s lost %u (remove mode %u) map %u zone %u area %u alive %u", player->GetName(), id, uint32(mode),
+                              GetMapId(), player->GetZoneId(), player->GetAreaId(), uint32(IsAlive()));
+        }
+    }
+
     // Statue unsummoned at holder remove
     SpellEntry const* aurSpellInfo = holder->GetSpellProto();
     Totem* statue = nullptr;
