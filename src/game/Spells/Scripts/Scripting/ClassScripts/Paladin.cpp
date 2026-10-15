@@ -97,7 +97,14 @@ enum
     SPELL_IMPROVED_CONCENTRATION_PERSONAL_1 = 55102,   // one per talent rank, so the client's tooltip shows the real values
     SPELL_IMPROVED_CONCENTRATION_PERSONAL_2 = 55103,
     SPELL_IMPROVED_CONCENTRATION_PERSONAL_3 = 55029,
-    SPELL_LIGHTS_GRACE_INSTANT      = 55030,
+    SPELL_VENGEANCE_INSTANT_FLASH   = 55030,
+    SPELL_HOLY_POWER_R1             = 5923,
+    SPELL_HOLY_POWER_R2             = 5924,
+    SPELL_HOLY_POWER_R3             = 5925,
+    SPELL_HOLY_POWER_R4             = 5926,
+    SPELL_HOLY_POWER_R5             = 25829,
+    SPELL_JUDGEMENTS_OF_THE_PURE_R1 = 55104,   // one per Holy Power rank, so the client's tooltip shows the real values
+    SPELL_JUDGEMENTS_OF_THE_PURE_R5 = 55108,
     SPELL_AURA_MASTERY_IMMUNITY     = 55031,
     SPELL_IMPROVED_LAY_ON_HANDS_R1  = 20234,
     SPELL_IMPROVED_LAY_ON_HANDS_R2  = 20235,
@@ -213,6 +220,22 @@ static void JudgementsOfTheWise(Unit* caster)
         caster->CastSpell(target, SPELL_REPLENISHMENT, TRIGGERED_OLD_TRIGGERED);
 }
 
+// 5923-5926, 25829 - Holy Power (custom, the classic fork's Judgements of the Pure, WotLK's talent): every judgement gives
+// 55104-55108 (ranks 1-5: +2/4/5/7/9% melee and casting speed, 1 min)
+static void JudgementsOfThePure(Unit* caster)
+{
+    static uint32 const talents[] = { SPELL_HOLY_POWER_R1, SPELL_HOLY_POWER_R2, SPELL_HOLY_POWER_R3, SPELL_HOLY_POWER_R4, SPELL_HOLY_POWER_R5 };
+    uint32 buff = 0;
+    for (uint32 i = 0; i < 5; ++i)
+        if (caster->HasAura(talents[i]))
+            buff = SPELL_JUDGEMENTS_OF_THE_PURE_R1 + i;
+    for (uint32 other = SPELL_JUDGEMENTS_OF_THE_PURE_R1; other <= SPELL_JUDGEMENTS_OF_THE_PURE_R5; ++other)
+        if (other != buff)
+            caster->RemoveAurasDueToSpell(other);   // a rank learned or unlearned since
+    if (buff)
+        caster->CastSpell(caster, buff, TRIGGERED_OLD_TRIGGERED);
+}
+
 // 20271 - Judgement
 struct spell_judgement : public SpellScript
 {
@@ -260,7 +283,10 @@ struct spell_judgement : public SpellScript
         }
         caster->CastSpell(unitTarget, spellId2, TRIGGERED_IGNORE_GCD | TRIGGERED_IGNORE_CURRENT_CASTED_SPELL);
         if (spellId2 > 1)
+        {
             JudgementsOfTheWise(caster);
+            JudgementsOfThePure(caster);
+        }
         // custom: Judgement of Justice also interrupts, with a 3 s school lockout (the classic fork's PvP judgement)
         if (spellId2 == SPELL_JUDGEMENT_OF_JUSTICE_R1 || spellId2 == SPELL_JUDGEMENT_OF_JUSTICE_R2)
             caster->CastSpell(unitTarget, SPELL_JUDGEMENT_OF_JUSTICE_INTERRUPT, TRIGGERED_IGNORE_GCD | TRIGGERED_IGNORE_CURRENT_CASTED_SPELL | TRIGGERED_IGNORE_HIT_CALCULATION);
@@ -777,16 +803,17 @@ struct ImprovedConcentrationAura : public AuraScript
     }
 };
 
-// 31833, 31835, 31836 - Light's Grace (custom): effect 1 is TBC's (a Holy Light speeds up the next one); effect 2 makes a melee
-// critical strike give 55030 (next Flash of Light or Holy Light instant). Both share the talent's 33/66/100% proc chance.
-struct LightsGrace : public AuraScript
+// 20049, 20056-20059 - Vengeance (custom): effect 1 is the stock damage buff on any crit; effect 2's percent (20/40/60/80/100%
+// by rank) of melee critical strikes also gives 55030, next Flash of Light instant (WotLK's Art of War; it was on Light's
+// Grace until 2026-10-14, the user: one talent shouldn't feed one spell from two procs)
+struct Vengeance : public AuraScript
 {
     bool OnCheckProc(Aura* aura, ProcExecutionData& data) const override
     {
         switch (aura->GetEffIndex())
         {
             case EFFECT_INDEX_0:
-                return data.spellInfo && data.spellInfo->IsFitToFamily(SPELLFAMILY_PALADIN, uint64(0x0000000080000000)); // Holy Light
+                return true;
             case EFFECT_INDEX_1:
                 return (data.procFlags & (PROC_FLAG_DEAL_MELEE_SWING | PROC_FLAG_DEAL_MELEE_ABILITY)) && (data.procExtra & PROC_EX_CRITICAL_HIT);
             default:
@@ -798,7 +825,8 @@ struct LightsGrace : public AuraScript
     {
         if (aura->GetEffIndex() != EFFECT_INDEX_1)
             return SPELL_AURA_PROC_OK; // effect 1: the stock trigger
-        aura->GetTarget()->CastSpell(aura->GetTarget(), SPELL_LIGHTS_GRACE_INSTANT, TRIGGERED_OLD_TRIGGERED);
+        if (roll_chance_i(aura->GetModifier()->m_amount))
+            aura->GetTarget()->CastSpell(aura->GetTarget(), SPELL_VENGEANCE_INSTANT_FLASH, TRIGGERED_OLD_TRIGGERED);
         return SPELL_AURA_PROC_CANT_TRIGGER;
     }
 };
@@ -941,7 +969,7 @@ void LoadPaladinScripts()
     RegisterSpellScript<ArdentDefender>("spell_paladin_ardent_defender");
     RegisterSpellScript<ImprovedDevotionAura>("spell_paladin_improved_devotion_aura");
     RegisterSpellScript<ImprovedConcentrationAura>("spell_paladin_improved_concentration_aura");
-    RegisterSpellScript<LightsGrace>("spell_paladin_lights_grace");
+    RegisterSpellScript<Vengeance>("spell_paladin_vengeance");
     RegisterSpellScript<LayOnHands>("spell_paladin_lay_on_hands");
     RegisterSpellScript<AuraMastery>("spell_paladin_aura_mastery");
 }
