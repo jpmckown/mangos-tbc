@@ -1254,6 +1254,19 @@ struct npc_reginald_windsorAI : public npc_escortAI, private DialogueHelper
         DoBroadcastText(SAY_HARROWGATE_CHARGE, harrowgate);
         harrowgate->SetFactionTemporary(11, TEMPFACTION_RESTORE_REACH_HOME);   // same as Bolvar, so he can fight Onyxia's guards
         harrowgate->SetWalk(false);
+        DoHarrowgateAttackNearestGuard();
+    }
+
+    // Fork: his AI (EventAI with no events) fights what it's given and doesn't look for the next guard itself, and
+    // "no aggro on sight" keeps him from picking one up, so he's sent at the nearest living guard whenever he has no live target
+    void DoHarrowgateAttackNearestGuard()
+    {
+        Creature* harrowgate = m_creature->GetMap()->GetCreature(m_harrowgateGuid);
+        if (!harrowgate || !harrowgate->IsAlive() || !harrowgate->AI())
+            return;
+        if (Unit* victim = harrowgate->GetVictim())
+            if (victim->IsAlive())
+                return;
 
         Creature* target = nullptr;
         for (ObjectGuid const& guid : m_lRoyalGuardsGuidList)
@@ -1264,7 +1277,7 @@ struct npc_reginald_windsorAI : public npc_escortAI, private DialogueHelper
             if (!target || harrowgate->GetDistance(guard) < harrowgate->GetDistance(target))
                 target = guard;
         }
-        if (target && harrowgate->AI())
+        if (target)
             harrowgate->AI()->AttackStart(target);
     }
 
@@ -1306,7 +1319,10 @@ struct npc_reginald_windsorAI : public npc_escortAI, private DialogueHelper
                     m_guardCheckTimer = 0;
                 }
                 else
+                {
+                    DoHarrowgateAttackNearestGuard();               // Fork: keep Harrowgate on the guards until the last one falls
                     m_guardCheckTimer = 1000;
+                }
             }
             else
                 m_guardCheckTimer -= diff;
