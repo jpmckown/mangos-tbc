@@ -303,6 +303,11 @@ void AuctionHouseMgr::LoadAuctionItems()
         uint32 item_guid        = fields[11].GetUInt32();
         uint32 item_template    = fields[12].GetUInt32();
 
+        // Fork (ah-market): two auction rows can share one item when a won auction's row survived (2026-10-12 startup
+        // crash loop). Load the item once; LoadAuctions keeps the newest auction and deletes the older row.
+        if (GetAItem(item_guid))
+            continue;
+
         ItemPrototype const* proto = ObjectMgr::GetItemPrototype(item_template);
 
         if (!proto)
@@ -350,7 +355,8 @@ void AuctionHouseMgr::LoadAuctions()
         return;
     }
 
-    queryResult = CharacterDatabase.Query("SELECT id,houseid,itemguid,item_template,item_count,item_randompropertyid,itemowner,buyoutprice,time,buyguid,lastbid,startbid,deposit FROM auction");
+    // Fork (ah-market): newest first, so when two rows share an item the newer listing keeps it (see below)
+    queryResult = CharacterDatabase.Query("SELECT id,houseid,itemguid,item_template,item_count,item_randompropertyid,itemowner,buyoutprice,time,buyguid,lastbid,startbid,deposit FROM auction ORDER BY id DESC");
     if (!queryResult)
     {
         BarGoLink bar(1);
@@ -363,6 +369,7 @@ void AuctionHouseMgr::LoadAuctions()
 
     typedef std::map<uint32, std::wstring> PlayerNames;
     PlayerNames playerNames;                                // caching for load time
+    std::unordered_map<uint32, uint32> itemAuctions;        // item guid -> the (newer) auction holding it
 
     do
     {
@@ -410,6 +417,17 @@ void AuctionHouseMgr::LoadAuctions()
         {
             auction->DeleteFromDB();
             sLog.outError("Auction %u has not a existing item : %u, deleted", auction->Id, auction->itemGuidLow);
+            delete auction;
+            continue;
+        }
+
+        // Fork (ah-market): an item can only be relisted after it left its first auction, so the older row is stale
+        auto claimed = itemAuctions.emplace(auction->itemGuidLow, auction->Id);
+        if (!claimed.second)
+        {
+            sLog.outErrorDb("Auction %u (house %u, seller %u) shares item %u with newer auction %u; the older row is stale, deleted",
+                            auction->Id, houseid, auction->owner, auction->itemGuidLow, claimed.first->second);
+            auction->DeleteFromDB();
             delete auction;
             continue;
         }
@@ -1024,11 +1042,16 @@ void AuctionEntry::AuctionBidWinning(Player* newbidder)
     sAuctionMgr.RemoveAItem(this->itemGuidLow);
     sAuctionMgr.GetAuctionsMap(this->auctionHouseEntry)->RemoveAuction(this->Id);
 
-    CharacterDatabase.BeginTransaction();
+    // Fork (ah-market): the row goes on its own. The item already belongs to the buyer (the won mail above, outside any
+    // transaction), so deleting the row inside the buyer's save meant a failing save rolled the delete back and left a
+    // row whose item was relisted later: two auctions on one item, and an assert at the next startup (2026-10-12).
     this->DeleteFromDB();
     if (newbidder)
+    {
+        CharacterDatabase.BeginTransaction();
         newbidder->SaveInventoryAndGoldToDB();
-    CharacterDatabase.CommitTransaction();
+        CharacterDatabase.CommitTransaction();
+    }
 
     delete this;
 }

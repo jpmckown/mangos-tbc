@@ -458,8 +458,10 @@ void WorldSession::HandleAuctionRemoveItem(WorldPacket& recv_data)
     // inform player, that auction is removed
     SendAuctionCommandResult(auction, AUCTION_REMOVED, AUCTION_OK);
     // Now remove the auction
-    CharacterDatabase.BeginTransaction();
+    // Fork (ah-market): not in one transaction with the player's save; the item is already mailed back, so a failing
+    // save must not roll the delete back (see AuctionEntry::AuctionBidWinning)
     auction->DeleteFromDB();
+    CharacterDatabase.BeginTransaction();
     pl->SaveInventoryAndGoldToDB();
     CharacterDatabase.CommitTransaction();
     sAuctionMgr.RemoveAItem(auction->itemGuidLow);

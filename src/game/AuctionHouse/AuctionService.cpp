@@ -29,11 +29,13 @@
 #include "Policies/Singleton.h"
 
 #include <sstream>
+#include <vector>
 
 INSTANTIATE_SINGLETON_1(AuctionService);
 
 // Off-thread changes are logged, but only this many times, so a hot path can't flood the log
 static uint32 const MAX_OFF_THREAD_REPORTS = 50;
+static time_t const ORPHAN_SWEEP_INTERVAL = 30 * MINUTE;
 
 void AuctionService::Update()
 {
@@ -43,6 +45,52 @@ void AuctionService::Update()
         m_worldThread.store(std::this_thread::get_id());
 
     m_messager.Execute(this);
+
+    time_t now = time(nullptr);
+    if (now >= m_nextSweep)
+    {
+        if (m_nextSweep)                                    // not right at startup: LoadAuctions just checked the table
+            SweepOrphanRows();
+        m_nextSweep = now + ORPHAN_SWEEP_INTERVAL;
+    }
+}
+
+void AuctionService::SweepOrphanRows()
+{
+    std::unordered_set<uint32> inMemory;
+    for (uint32 type = 0; type < MAX_AUCTION_HOUSE_TYPE; ++type)
+        for (auto const& itr : sAuctionMgr.GetAuctionsMap(AuctionHouseType(type))->GetAuctions())
+            inMemory.insert(itr.first);
+
+    // ids only: this runs on the world thread
+    std::unordered_set<uint32> candidates;
+    std::vector<uint32> orphans;
+    if (auto result = CharacterDatabase.Query("SELECT id FROM auction"))
+    {
+        do
+        {
+            uint32 id = result->Fetch()[0].GetUInt32();
+            if (inMemory.count(id))
+                continue;
+            if (m_orphanCandidates.count(id))
+                orphans.push_back(id);
+            else
+                candidates.insert(id);                      // check again next sweep
+        }
+        while (result->NextRow());
+    }
+
+    for (uint32 id : orphans)
+    {
+        if (auto row = CharacterDatabase.PQuery("SELECT houseid, itemguid, item_template, itemowner, buyguid, time FROM auction WHERE id = '%u'", id))
+        {
+            Field* fields = row->Fetch();
+            sLog.outErrorDb("AuctionService: auction %u (house %u, item %u entry %u, seller %u, bidder %u, expires " UI64FMTD ") is in the DB but not on the server; row deleted",
+                            id, fields[0].GetUInt32(), fields[1].GetUInt32(), fields[2].GetUInt32(), fields[3].GetUInt32(), fields[4].GetUInt32(), fields[5].GetUInt64());
+        }
+        CharacterDatabase.PExecute("DELETE FROM auction WHERE id = '%u'", id);
+    }
+    m_orphanCandidates.swap(candidates);
 }
 
 bool AuctionService::IsWorldThread() const

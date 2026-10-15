@@ -25,6 +25,7 @@
 
 #include <atomic>
 #include <thread>
+#include <unordered_set>
 
 struct AuctionEntry;
 struct AuctionHouseEntry;
@@ -69,7 +70,14 @@ class AuctionService
         bool RemoveServerAuction(uint32 houseId, uint32 auctionId);
 
     private:
+        // Removes auction rows the server no longer holds (a row whose delete was lost; its item may have been relisted,
+        // which made the next startup assert, 2026-10-12). A row must be missing in two sweeps in a row, so a delete
+        // still waiting in the async queue is never taken for one.
+        void SweepOrphanRows();
+
         std::atomic<std::thread::id> m_worldThread{std::thread::id()};
+        time_t m_nextSweep = 0;
+        std::unordered_set<uint32> m_orphanCandidates;
         mutable std::atomic<uint32> m_offThreadReports{0};
         Messager<AuctionService> m_messager;
 };
