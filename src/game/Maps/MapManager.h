@@ -151,6 +151,16 @@ class MapManager : public MaNGOS::Singleton<MapManager, MaNGOS::ClassLevelLockab
         // get list of all maps
         const MapMapType& Maps() const { return i_maps; }
 
+        // Fork: the slowest map of the last update, for the slow-tick log (TickLog.Threshold)
+        struct SlowestMap
+        {
+            uint32 mapId = 0;
+            uint32 instanceId = 0;
+            uint32 mapCount = 0;
+            Map::TickStats stats;
+        };
+        SlowestMap const& GetSlowestMap() const { return m_slowestMap; }
+
         template<typename Check> inline WorldObject* SearchOnAllLoadedMap(Check& check);
         void DoForAllMaps(const std::function<void(Map*)>& worker);
         void DoForAllMapsWithMapId(uint32 mapId, const std::function<void(Map*)> worker);
@@ -183,6 +193,7 @@ class MapManager : public MaNGOS::Singleton<MapManager, MaNGOS::ClassLevelLockab
 
         std::atomic<uint32> i_MaxInstanceId;
         MapUpdater m_updater;
+        SlowestMap m_slowestMap;                        // Fork: see GetSlowestMap
 };
 
 template<typename Check>

@@ -139,6 +139,20 @@ class Map : public GridRefManager<NGridType>
     public:
         virtual ~Map();
 
+        // Fork: timings of the last update, for the slow-tick log (TickLog.Threshold)
+        struct TickStats
+        {
+            double wallMs = 0.0;                        // the whole Map::Update, set by its caller
+            double cpuMs = 0.0;
+            double playersMs = 0.0;                     // every Player::Update
+            double botAiMs = 0.0;                       // every Player::UpdateAI
+            double slowestMs = 0.0;                     // one player's Update + UpdateAI
+            double slowestAiMs = 0.0;                   // ... of which UpdateAI
+            std::string slowestName;
+            std::string slowestActions;                 // a bot's recent action trace (tail)
+        };
+        TickStats& GetTickStats() { return m_tickStats; }
+
         // currently unused for normal maps
         bool CanUnload(uint32 diff)
         {
@@ -530,6 +544,7 @@ class Map : public GridRefManager<NGridType>
 
         GraveyardManager m_graveyardManager;
     private:
+        TickStats m_tickStats;                          // Fork: see GetTickStats
         time_t i_gridExpiry;
         time_t m_curTime;
         tm m_curTimeTm;

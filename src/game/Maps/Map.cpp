@@ -31,6 +31,8 @@
 #include "Globals/ObjectAccessor.h"
 #include "Globals/ObjectMgr.h"
 #include "World/World.h"
+#include "World/TickProfile.h"
+#include "Entities/Pet.h"
 #include "Groups/Group.h"
 #include "MapRefManager.h"
 #include "Server/DBCEnums.h"
@@ -881,12 +883,18 @@ void Map::Update(const uint32& t_diff)
     bool shouldUpdateBots = urand(0, (uint32)(botUpdateChance * 100)) < 100;
 #endif
 
+    // Fork: per-player timings for the slow-tick log
+    bool const tickLog = sWorld.getConfig(CONFIG_UINT32_TICKLOG_THRESHOLD) != 0;
+    m_tickStats = TickStats();
+
     /// update players at tick
     for (m_mapRefIter = m_mapRefManager.begin(); m_mapRefIter != m_mapRefManager.end(); ++m_mapRefIter)
     {
         Player* plr = m_mapRefIter->getSource();
         if (plr && plr->IsInWorld())
         {
+            auto const playerStart = tickLog ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point();
+            double playerUpdateMs = 0.0;
 #ifdef ENABLE_PLAYERBOTS
             // Determine if the individual bot should update
             bool shouldUpdateBot = shouldUpdateBots;
@@ -929,6 +937,8 @@ void Map::Update(const uint32& t_diff)
             }
 #endif
             plr->Update(t_diff);
+            if (tickLog)
+                playerUpdateMs = TickProfile::WallMsSince(playerStart);
 
 #ifdef ENABLE_PLAYERBOTS
             if (sPlayerbotAIConfig.disableBotOptimizations)
@@ -940,6 +950,34 @@ void Map::Update(const uint32& t_diff)
                 plr->UpdateAI(t_diff, !shouldUpdateBot);
             }
 #endif
+            if (tickLog)
+            {
+                double const totalMs = TickProfile::WallMsSince(playerStart);
+                m_tickStats.playersMs += playerUpdateMs;
+                m_tickStats.botAiMs += totalMs - playerUpdateMs;
+                if (totalMs > m_tickStats.slowestMs)
+                {
+                    m_tickStats.slowestMs = totalMs;
+                    m_tickStats.slowestAiMs = totalMs - playerUpdateMs;
+                    m_tickStats.slowestName = plr->GetName();
+#ifdef ENABLE_PLAYERBOTS
+                    if (PlayerbotAI* botAI = plr->GetPlayerbotAI())
+                    {
+                        std::string trace = botAI->GetLastActionTrace();
+                        m_tickStats.slowestActions = trace.size() > 240 ? trace.substr(trace.size() - 240) : trace;
+                    }
+                    else
+                        m_tickStats.slowestActions.clear();
+#endif
+                    // pets are on the watch list (past playerbot pet bugs), so name the slowest player's pet/charm
+                    if (Pet* pet = plr->GetPet())
+                        m_tickStats.slowestActions += std::string(" | pet ") + pet->GetName() + " (" + std::to_string(pet->GetEntry()) + (pet->IsAlive() ? "" : ", dead") + ")";
+                    else if (plr->GetPetGuid())
+                        m_tickStats.slowestActions += " | pet guid set, pet not found";
+                    if (Unit* charm = plr->GetCharm())
+                        m_tickStats.slowestActions += " | charm " + std::string(charm->GetName());
+                }
+            }
         }
     }
 

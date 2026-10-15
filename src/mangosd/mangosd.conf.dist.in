@@ -234,6 +234,12 @@ Spawns.ZoneArea = 0
 #        amount of seconds. Must be > 0. Recommended > 10 secs if you use this.
 #        Default: 0 (Disabled)
 #
+#    TickLog.Threshold
+#        Log every world tick that takes at least this many milliseconds to Server.log, with wall and CPU time
+#        per phase and the slowest map and player. Wall time far above CPU time means waiting (database, lock,
+#        disk) rather than computing.
+#        Default: 0 (off)
+#
 #    Malloc.MmapThreshold
 #        glibc only. Allocations of at least this many bytes get their own memory mapping, returned to the system
 #        when freed. glibc's own default starts at 128 KB but rises (up to 32 MB) whenever a large block is freed,
@@ -292,6 +298,7 @@ UpdateUptimeInterval = 10
 MapUpdate.Threads = 3
 MaxCoreStuckTime = 0
 Malloc.MmapThreshold = 524288
+TickLog.Threshold = 0
 AddonChannel = 1
 CleanCharacterDB = 1
 MaxWhoListReturns = 49

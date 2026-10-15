@@ -24,6 +24,7 @@
 #include "Entities/Transports.h"
 #include "Maps/GridDefines.h"
 #include "World/World.h"
+#include "World/TickProfile.h"
 #include "Grids/CellImpl.h"
 #include "Globals/ObjectMgr.h"
 #include "Maps/MapWorkers.h"
@@ -202,11 +203,30 @@ void MapManager::Update(uint32 diff)
         if (m_updater.activated())
             m_updater.schedule_update(new MapUpdateWorker(*map.second, (uint32)i_timer.GetCurrent(), m_updater));
         else
+        {
+            TickProfile::Stamp const start = TickProfile::Now();  // Fork: slow-tick log
             map.second->Update((uint32)i_timer.GetCurrent());
+            TickProfile::Span const span = TickProfile::Since(start);
+            map.second->GetTickStats().wallMs = span.wallMs;
+            map.second->GetTickStats().cpuMs = span.cpuMs;
+        }
     }
 
     if (m_updater.activated())
         m_updater.wait();
+
+    // Fork: remember the slowest map before any unload below, for the slow-tick log
+    m_slowestMap = SlowestMap();
+    m_slowestMap.mapCount = uint32(i_maps.size());
+    for (auto& map : i_maps)
+    {
+        if (map.second->GetTickStats().wallMs > m_slowestMap.stats.wallMs)
+        {
+            m_slowestMap.mapId = map.second->GetId();
+            m_slowestMap.instanceId = map.second->GetInstanceId();
+            m_slowestMap.stats = map.second->GetTickStats();
+        }
+    }
 
     // remove all maps which can be unloaded
     MapMapType::iterator iter = i_maps.begin();

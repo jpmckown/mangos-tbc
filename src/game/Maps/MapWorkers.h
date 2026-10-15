@@ -25,6 +25,7 @@
 #include "MotionGenerators/MovementGenerator.h"
 #include "Entities/Object.h"
 #include "Platform/Define.h"
+#include "World/TickProfile.h"
 
 class Worker
 {
@@ -49,7 +50,11 @@ class MapUpdateWorker : public Worker
 
         void execute() override
         {
+            TickProfile::Stamp const start = TickProfile::Now();  // Fork: slow-tick log
             m_map.Update(m_diff);
+            TickProfile::Span const span = TickProfile::Since(start);
+            m_map.GetTickStats().wallMs = span.wallMs;
+            m_map.GetTickStats().cpuMs = span.cpuMs;
             GetWorker().update_finished();
         }
 

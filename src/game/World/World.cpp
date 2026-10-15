@@ -45,6 +45,7 @@
 #include "Loot/LootMgr.h"
 #include "Entities/ItemEnchantmentMgr.h"
 #include "Maps/MapManager.h"
+#include "World/TickProfile.h"
 #include "DBScripts/ScriptMgr.h"
 #include "AI/CreatureAIRegistry.h"
 #include "Policies/Singleton.h"
@@ -511,6 +512,7 @@ void World::LoadConfigSettings(bool reload)
         sMapMgr.SetGridCleanUpDelay(getConfig(CONFIG_UINT32_INTERVAL_GRIDCLEAN));
 
     setConfigMin(CONFIG_UINT32_INTERVAL_MAPUPDATE, "MapUpdateInterval", 100, MIN_MAP_UPDATE_DELAY);
+    setConfig(CONFIG_UINT32_TICKLOG_THRESHOLD, "TickLog.Threshold", 0);
     if (reload)
         sMapMgr.SetMapUpdateInterval(getConfig(CONFIG_UINT32_INTERVAL_MAPUPDATE));
 
@@ -1570,6 +1572,19 @@ void World::Update(uint32 diff)
     m_currentTime = std::chrono::time_point_cast<std::chrono::milliseconds>(Clock::now());
     m_currentDiff = diff;
 
+    // Fork: phase timings for the slow-tick log (TickLog.Threshold); one line per tick at least that slow
+    uint32 const tickLogMs = getConfig(CONFIG_UINT32_TICKLOG_THRESHOLD);
+    TickProfile::Stamp const tickStart = TickProfile::Now();
+    TickProfile::Stamp tickMark = tickStart;
+    TickProfile::Span tickPhase[6];                 // start, bot AI, bot sessions, sessions, maps, rest
+    auto tickLap = [&](int phase)
+    {
+        if (!tickLogMs)
+            return;
+        tickPhase[phase] = TickProfile::Since(tickMark);
+        tickMark = TickProfile::Now();
+    };
+
 #ifdef ENABLE_PLAYERBOTS
     m_currentDiffSum += diff;
     m_currentDiffSumIndex++;
@@ -1657,8 +1672,11 @@ void World::Update(uint32 diff)
 #endif
 
 #ifdef ENABLE_PLAYERBOTS
+    tickLap(0);
     sRandomPlayerbotMgr.UpdateAI(diff);
+    tickLap(1);
     sRandomPlayerbotMgr.UpdateSessions(diff);
+    tickLap(2);
 #endif
 
     /// <li> Handle session updates
@@ -1677,12 +1695,14 @@ void World::Update(uint32 diff)
         LoginDatabase.PExecute("UPDATE uptime SET uptime = %u, maxplayers = %u WHERE realmid = %u AND starttime = " UI64FMTD, tmpDiff, maxClientsNum, realmID, uint64(m_startTime));
     }
 
+    tickLap(3);
     /// <li> Handle all other objects
     ///- Update objects (maps, transport, creatures,...)
 #ifdef BUILD_METRICS
     auto preMapTime = std::chrono::time_point_cast<std::chrono::milliseconds>(Clock::now());
 #endif
     sMapMgr.Update(diff);
+    tickLap(4);
 #ifdef BUILD_METRICS
     auto postMapTime = std::chrono::time_point_cast<std::chrono::milliseconds>(Clock::now());
 #endif
@@ -1750,6 +1770,25 @@ void World::Update(uint32 diff)
 
     // cleanup unused GridMap objects as well as VMaps
     sTerrainMgr.Update(diff);
+
+    if (tickLogMs)
+    {
+        tickPhase[5] = TickProfile::Since(tickMark);
+        TickProfile::Span const total = TickProfile::Since(tickStart);
+        if (total.wallMs >= tickLogMs)
+        {
+            // wall/cpu per phase; the maps phase's cpu is ~0 because this thread waits for the map threads
+            MapManager::SlowestMap const& slow = sMapMgr.GetSlowestMap();
+            sLog.outString("Slow tick: %.0f ms (cpu %.0f) | start %.0f/%.0f | bot AI %.0f/%.0f | bot sessions %.0f/%.0f | sessions %.0f/%.0f | maps %.0f | rest %.0f/%.0f"
+                " || slowest of %u maps: %u/%u %.0f ms (cpu %.0f), players %.0f, bot AI %.0f, slowest player %s %.0f (AI %.0f) | actions: %s",
+                total.wallMs, total.cpuMs, tickPhase[0].wallMs, tickPhase[0].cpuMs, tickPhase[1].wallMs, tickPhase[1].cpuMs,
+                tickPhase[2].wallMs, tickPhase[2].cpuMs, tickPhase[3].wallMs, tickPhase[3].cpuMs, tickPhase[4].wallMs,
+                tickPhase[5].wallMs, tickPhase[5].cpuMs, slow.mapCount, slow.mapId, slow.instanceId, slow.stats.wallMs,
+                slow.stats.cpuMs, slow.stats.playersMs, slow.stats.botAiMs,
+                slow.stats.slowestName.empty() ? "-" : slow.stats.slowestName.c_str(), slow.stats.slowestMs, slow.stats.slowestAiMs,
+                slow.stats.slowestActions.empty() ? "-" : slow.stats.slowestActions.c_str());
+        }
+    }
 #ifdef BUILD_METRICS
     auto updateEndTime = std::chrono::time_point_cast<std::chrono::milliseconds>(Clock::now());
     long long total = (updateEndTime - m_currentTime).count();
