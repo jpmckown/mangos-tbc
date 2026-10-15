@@ -682,7 +682,11 @@ void GameObject::Update(const uint32 diff)
             SetLootState(GO_READY);
 
             // non-consumable chests and goobers should never despawn
-            if ((GetGoType() == GAMEOBJECT_TYPE_CHEST || GetGoType() == GAMEOBJECT_TYPE_GOOBER) && !GetGOInfo()->IsDespawnAtAction() && !m_forcedDespawn)
+            // Fork: nor should doors and buttons. A door that spawns open starts GO_ACTIVATED, so closing it from a script
+            // (UseOpenableObject -> ResetDoorOrButton) lands here and used to despawn it for its spawntimesecs (BRD's Giant Doors
+            // vanished for 10 min instead of lowering, so the Shadowforge Lock seemed to do nothing)
+            if ((GetGoType() == GAMEOBJECT_TYPE_CHEST || GetGoType() == GAMEOBJECT_TYPE_GOOBER
+                    || GetGoType() == GAMEOBJECT_TYPE_DOOR || GetGoType() == GAMEOBJECT_TYPE_BUTTON) && !GetGOInfo()->IsDespawnAtAction() && !m_forcedDespawn)
                 return;
 
             if (!m_respawnDelay)
