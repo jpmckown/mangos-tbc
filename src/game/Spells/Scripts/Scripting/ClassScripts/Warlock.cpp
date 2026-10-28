@@ -413,6 +413,11 @@ struct SeedOfCorruption : public AuraScript
     {
         if (aura->GetEffIndex() != EFFECT_INDEX_1)
             return SPELL_AURA_PROC_OK;
+        // Fork (2026-10-27): patch 2.0.7, "Seed of Corruption cannot proc off of its own damage. It used to go off when
+        // another seed exploded. Now it doesn't react to other seeds." (Shadowfury and Rain of Fire still do.) One
+        // warlock's seeds chained through a clumped raid at Halaa (85 hits on players in 16 min).
+        if (procData.spellInfo && procData.spellInfo->Id == SPELL_SEED_DAMAGE)
+            return SPELL_AURA_PROC_OK;
         Modifier* mod = procData.triggeredByAura->GetModifier();
         // if damage is more than need
         if (mod->m_amount <= (int32)procData.damage)
@@ -440,8 +445,10 @@ struct SeedOfCorruptionDamage : public SpellScript
 {
     bool OnCheckTarget(const Spell* spell, Unit* target, SpellEffectIndex /*eff*/) const override
     {
+        // Fork (2026-10-27): TBC skips the target of the initial aura; upstream b77febfa9 (2022) made it WotLK's
+        // "also damages the initial target" in this TBC core
         if (target->GetObjectGuid() == spell->m_targets.getUnitTargetGuid()) // in TBC skip target of initial aura
-            return true; // in WotLK Seed of Corruption also damages the initial target
+            return false;
         return true;
     }
 };
