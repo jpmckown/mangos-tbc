@@ -509,6 +509,8 @@ class World
         uint32 GetUptime() const { return uint32(m_gameTime - m_startTime); }
         /// Next daily quests reset time
         time_t GetNextDailyQuestsResetTime() const { return m_NextDailyQuestReset; }
+        // Fork: `hour`:00 local time on the local day of `t` moved by `days`, DST-safe (adding DAY/WEEK seconds drifts an hour at each change)
+        static time_t LocalDayAt(time_t t, int32 days, uint32 hour);
 
         /// Get the maximum skill level a player can reach
         uint16 GetConfigMaxSkillValue() const

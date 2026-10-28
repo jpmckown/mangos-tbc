@@ -352,18 +352,57 @@ uint32 DungeonResetScheduler::GetMaxResetTimeFor(InstanceTemplate const* temp)
     return temp->reset_delay * DAY;
 }
 
+// Fork: global reset times are local wall-clock times: Instance.ResetTimeHour in the server's time zone (DST-safe), and maps
+// whose period is whole weeks reset on Quests.Weekly.ResetWeekDay. Upstream did the day arithmetic on UTC days (so "4" meant
+// 04:00 UTC) and seeded first reset times from the daily quest hour and Arena.FirstResetDay.
+static uint32 ResetPeriodDays(InstanceTemplate const* temp)
+{
+    return DungeonResetScheduler::GetMaxResetTimeFor(temp) / DAY;
+}
+
+static bool IsWeeklyReset(uint32 periodDays)
+{
+    return periodDays % 7 == 0;
+}
+
+// the first weekly reset day at the reset hour after t
+static time_t NextWeeklyResetAfter(time_t t, uint32 hour)
+{
+    tm localTm = *localtime(&t);
+    int32 days = (7 + int32(sWorld.getConfig(CONFIG_UINT32_QUEST_WEEKLY_RESET_WEEK_DAY)) - localTm.tm_wday) % 7;
+    time_t next = World::LocalDayAt(t, days, hour);
+    return next > t ? next : World::LocalDayAt(t, days + 7, hour);
+}
+
+// moves a stored reset time onto the schedule: the reset hour on its own local day (as upstream did with UTC days), then
+// (weekly maps) forward to the weekly reset day. A time that was already past stays past, so its saves are cleaned up.
+static time_t AlignResetTime(InstanceTemplate const* temp, time_t t)
+{
+    uint32 hour = sWorld.getConfig(CONFIG_UINT32_INSTANCE_RESET_TIME_HOUR);
+    time_t aligned = World::LocalDayAt(t, 0, hour);
+
+    if (IsWeeklyReset(ResetPeriodDays(temp)))
+    {
+        tm localTm = *localtime(&aligned);
+        int32 days = (7 + int32(sWorld.getConfig(CONFIG_UINT32_QUEST_WEEKLY_RESET_WEEK_DAY)) - localTm.tm_wday) % 7;
+        aligned = World::LocalDayAt(aligned, days, hour);
+    }
+    return aligned;
+}
+
 time_t DungeonResetScheduler::CalculateNextResetTime(InstanceTemplate const* temp, time_t prevResetTime)
 {
-    uint32 diff = sWorld.getConfig(CONFIG_UINT32_INSTANCE_RESET_TIME_HOUR) * HOUR;
-    uint32 period = GetMaxResetTimeFor(temp);
-    return ((prevResetTime + MINUTE) / DAY * DAY) + period + diff;
+    // Fork: local days; weekly maps go to the next weekly reset day, so a forced reset doesn't move their schedule
+    uint32 hour = sWorld.getConfig(CONFIG_UINT32_INSTANCE_RESET_TIME_HOUR);
+    uint32 periodDays = ResetPeriodDays(temp);
+    if (IsWeeklyReset(periodDays))
+        return World::LocalDayAt(NextWeeklyResetAfter(prevResetTime + MINUTE, hour), int32(periodDays) - 7, hour);
+    return World::LocalDayAt(prevResetTime + MINUTE, int32(periodDays), hour);
 }
 
 void DungeonResetScheduler::LoadResetTimes()
 {
     time_t now = time(nullptr);
-    time_t today = (now / DAY) * DAY;
-    time_t nextWeek = today + (7 * DAY);
 
     // NOTE: Use DirectPExecute for tables that will be queried later
 
@@ -424,7 +463,7 @@ void DungeonResetScheduler::LoadResetTimes()
     }
 
     // load the global respawn times for raid/heroic instances
-    uint32 diff = sWorld.getConfig(CONFIG_UINT32_INSTANCE_RESET_TIME_HOUR) * HOUR;
+    uint32 resetHour = sWorld.getConfig(CONFIG_UINT32_INSTANCE_RESET_TIME_HOUR);
     m_resetTimeByMapId.resize(sMapStore.GetNumRows() + 1);
     queryResult = CharacterDatabase.Query("SELECT mapid, resettime FROM instance_reset");
     if (queryResult)
@@ -444,9 +483,9 @@ void DungeonResetScheduler::LoadResetTimes()
                 continue;
             }
 
-            // update the reset time if the hour in the configs changes
+            // update the reset time if the hour or weekday in the configs changes (Fork: local time, AlignResetTime)
             uint64 oldresettime = fields[1].GetUInt64();
-            uint64 newresettime = (oldresettime / DAY) * DAY + diff;
+            uint64 newresettime = uint64(AlignResetTime(ObjectMgr::GetInstanceTemplate(mapid), time_t(oldresettime)));
             if (oldresettime != newresettime)
                 CharacterDatabase.DirectPExecute("UPDATE instance_reset SET resettime = '" UI64FMTD "' WHERE mapid = '%u'", newresettime, mapid);
 
@@ -474,29 +513,30 @@ void DungeonResetScheduler::LoadResetTimes()
 
         uint32 period = GetMaxResetTimeFor(temp);
         time_t t = GetResetTimeFor(temp->map);
-        if (!t)
+        // Fork: first reset times start at the instance reset hour (longer periods on the weekly reset day), and catching up
+        // steps whole periods on local days, so every map keeps its cycle; a time more than one period ahead starts over
+        int32 periodDays = int32(period / DAY);
+        bool restart = t > time_t(now + period);
+        if (!t || restart)
         {
             // initialize the reset time
             // generate time by config on first server launch
-            tm localTm = *localtime(&now);
-            localTm.tm_hour = sWorld.getConfig(CONFIG_UINT32_QUEST_DAILY_RESET_HOUR);
-            localTm.tm_min = 0;
-            localTm.tm_sec = 0;
-            if (period > DAY) // resets bigger than 1 day start on config day
-                localTm.tm_mday += ((7 - localTm.tm_wday + sWorld.getConfig(CONFIG_UINT32_ARENA_FIRST_RESET_DAY)) % 7);
-            else // resets day and less start on next day
-                localTm.tm_mday += 1;
-            localTm.tm_isdst = -1;
-            t = mktime(&localTm);
-            CharacterDatabase.DirectPExecute("INSERT INTO instance_reset VALUES ('%u','" UI64FMTD "')", temp->map, (uint64)t);
+            time_t today = World::LocalDayAt(now, 0, resetHour);
+            t = period > DAY ? NextWeeklyResetAfter(now, resetHour) : (today > now ? today : World::LocalDayAt(now, 1, resetHour));
+            if (restart)
+                CharacterDatabase.DirectPExecute("UPDATE instance_reset SET resettime = '" UI64FMTD "' WHERE mapid = '%u'", (uint64)t, temp->map);
+            else
+                CharacterDatabase.DirectPExecute("INSERT INTO instance_reset VALUES ('%u','" UI64FMTD "')", temp->map, (uint64)t);
         }
 
-        if (t < now || t > nextWeek)
+        if (t < now)
         {
             // assume that expired instances have already been cleaned
             // calculate the next reset time
-            t = (t / DAY) * DAY;
-            t += ((today - t) / period + 1) * period + diff;
+            int32 missedDays = int32((now - t) / DAY) / periodDays * periodDays;
+            t = World::LocalDayAt(t, missedDays, resetHour);
+            while (t <= now)
+                t = World::LocalDayAt(t, periodDays, resetHour);
             CharacterDatabase.DirectPExecute("UPDATE instance_reset SET resettime = '" UI64FMTD "' WHERE mapid = '%u'", (uint64)t, temp->map);
         }
 

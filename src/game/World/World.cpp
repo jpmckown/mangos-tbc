@@ -2320,6 +2320,17 @@ void World::_UpdateRealmCharCount(QueryResult* resultCharCount, uint32 accountId
     }
 }
 
+time_t World::LocalDayAt(time_t t, int32 days, uint32 hour)
+{
+    tm localTm = *localtime(&t);
+    localTm.tm_mday += days;
+    localTm.tm_hour = hour;
+    localTm.tm_min = 0;
+    localTm.tm_sec = 0;
+    localTm.tm_isdst = -1;
+    return mktime(&localTm);
+}
+
 void World::InitDailyQuestResetTime()
 {
     auto queryResult = CharacterDatabase.Query("SELECT NextDailyQuestResetTime FROM saved_variables");
@@ -2328,22 +2339,19 @@ void World::InitDailyQuestResetTime()
     else
         m_NextDailyQuestReset = time_t((*queryResult)[0].GetUInt64());
 
-    // generate time by config
+    // generate time by config (Fork: local calendar days, DST-safe)
     time_t curTime = time(nullptr);
-    tm localTm = *localtime(&curTime);
-    localTm.tm_hour = getConfig(CONFIG_UINT32_QUEST_DAILY_RESET_HOUR);
-    localTm.tm_min  = 0;
-    localTm.tm_sec  = 0;
+    uint32 resetHour = getConfig(CONFIG_UINT32_QUEST_DAILY_RESET_HOUR);
 
     // current day reset time
-    time_t nextDayResetTime = mktime(&localTm);
+    time_t nextDayResetTime = LocalDayAt(curTime, 0, resetHour);
 
     // next reset time before current moment
     if (curTime >= nextDayResetTime)
-        nextDayResetTime += DAY;
+        nextDayResetTime = LocalDayAt(curTime, 1, resetHour);
 
     // normalize reset time
-    m_NextDailyQuestReset = m_NextDailyQuestReset < curTime ? nextDayResetTime - DAY : nextDayResetTime;
+    m_NextDailyQuestReset = m_NextDailyQuestReset < curTime ? LocalDayAt(nextDayResetTime, -1, resetHour) : nextDayResetTime;
 
     if (!queryResult)
         CharacterDatabase.PExecute("INSERT INTO saved_variables (NextDailyQuestResetTime) VALUES ('" UI64FMTD "')", uint64(m_NextDailyQuestReset));
@@ -2357,25 +2365,22 @@ void World::InitWeeklyQuestResetTime()
     else
         m_NextWeeklyQuestReset = time_t((*queryResult)[0].GetUInt64());
 
-    // generate time by config
+    // generate time by config (Fork: local calendar days, DST-safe)
     time_t curTime = time(nullptr);
     tm localTm = *localtime(&curTime);
+    uint32 resetHour = getConfig(CONFIG_UINT32_QUEST_WEEKLY_RESET_HOUR);
 
     int week_day_offset = localTm.tm_wday - int(getConfig(CONFIG_UINT32_QUEST_WEEKLY_RESET_WEEK_DAY));
 
-    // current week reset time
-    localTm.tm_hour = getConfig(CONFIG_UINT32_QUEST_WEEKLY_RESET_HOUR);
-    localTm.tm_min = 0;
-    localTm.tm_sec = 0;
-    time_t nextWeekResetTime = mktime(&localTm);
-    nextWeekResetTime -= week_day_offset * DAY;             // move time to proper day
+    // current week reset time, moved to the proper day
+    time_t nextWeekResetTime = LocalDayAt(curTime, -week_day_offset, resetHour);
 
     // next reset time before current moment
     if (curTime >= nextWeekResetTime)
-        nextWeekResetTime += WEEK;
+        nextWeekResetTime = LocalDayAt(nextWeekResetTime, 7, resetHour);
 
     // normalize reset time
-    m_NextWeeklyQuestReset = m_NextWeeklyQuestReset < curTime ? nextWeekResetTime - WEEK : nextWeekResetTime;
+    m_NextWeeklyQuestReset = m_NextWeeklyQuestReset < curTime ? LocalDayAt(nextWeekResetTime, -7, resetHour) : nextWeekResetTime;
 
     if (!queryResult)
         CharacterDatabase.PExecute("INSERT INTO saved_variables (NextWeeklyQuestResetTime) VALUES ('" UI64FMTD "')", uint64(m_NextWeeklyQuestReset));
@@ -2422,6 +2427,7 @@ void World::SetMonthlyQuestResetTime(bool initialize)
     localTm.tm_hour = getConfig(CONFIG_UINT32_QUEST_DAILY_RESET_HOUR);
     localTm.tm_min = 0;
     localTm.tm_sec = 0;
+    localTm.tm_isdst = -1;                                  // Fork: next month may be on the other side of a DST change (Oct -> Nov 1 came out 05:00 PST)
 
     time_t nextMonthResetTime = mktime(&localTm);
 
@@ -2513,7 +2519,7 @@ void World::ResetDailyQuests()
         if (itr->second->GetPlayer())
             itr->second->GetPlayer()->ResetDailyQuestStatus();
 
-    m_NextDailyQuestReset = time_t(m_NextDailyQuestReset + DAY);
+    m_NextDailyQuestReset = LocalDayAt(m_NextDailyQuestReset, 1, getConfig(CONFIG_UINT32_QUEST_DAILY_RESET_HOUR)); // Fork: DST-safe
     CharacterDatabase.PExecute("UPDATE saved_variables SET NextDailyQuestResetTime = '" UI64FMTD "'", uint64(m_NextDailyQuestReset));
 
     GenerateEventGroupEvents(true, false, true); // generate dailies and save to DB
@@ -2527,7 +2533,7 @@ void World::ResetWeeklyQuests()
         if (itr->second->GetPlayer())
             itr->second->GetPlayer()->ResetWeeklyQuestStatus();
 
-    m_NextWeeklyQuestReset = time_t(m_NextWeeklyQuestReset + WEEK);
+    m_NextWeeklyQuestReset = LocalDayAt(m_NextWeeklyQuestReset, 7, getConfig(CONFIG_UINT32_QUEST_WEEKLY_RESET_HOUR)); // Fork: DST-safe
     CharacterDatabase.PExecute("UPDATE saved_variables SET NextWeeklyQuestResetTime = '" UI64FMTD "'", uint64(m_NextWeeklyQuestReset));
 
     GenerateEventGroupEvents(false, true, true); // generate weeklies and save to DB

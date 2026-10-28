@@ -715,7 +715,8 @@ LogColors = ""
 #        Default: 1 (true, combat persists, default post-2.3.0)
 #
 #    Instance.ResetTimeHour
-#        The hour of the day (0-23) when the global instance resets occur.
+#        The hour of the day (0-23), server local time, when the global instance resets occur.
+#        Fork: local time (upstream used UTC days); raids with a whole-week lockout reset on Quests.Weekly.ResetWeekDay.
 #        Default: 4
 #
 #    Instance.CreatureCCMaxDuration
@@ -748,7 +749,15 @@ LogColors = ""
 #                -1 (show all available quests marks)
 #
 #    Quests.Daily.ResetHour
-#        Hour when daily quests reset (0..23)
+#        Hour when daily quests reset (0..23), server local time
+#        Default: 6
+#
+#    Quests.Weekly.ResetWeekDay
+#        Day of the week (0 = Sunday .. 6 = Saturday) when weekly quests and weekly raid lockouts reset
+#        Default: 2 (Tuesday)
+#
+#    Quests.Weekly.ResetHour
+#        Hour when weekly quests reset (0..23), server local time
 #        Default: 6
 #
 #    Quests.IgnoreRaid
@@ -928,7 +937,9 @@ Instance.UnloadDelay = 1800000
 Instance.DisableRelocate = 0
 Quests.LowLevelHideDiff = 5
 Quests.HighLevelHideDiff = 7
-Quests.Daily.ResetHour = 6
+Quests.Weekly.ResetWeekDay = 2
+Quests.Weekly.ResetHour = 4
+Quests.Daily.ResetHour = 4
 Quests.IgnoreRaid = 0
 Group.OfflineLeaderDelay = 300
 Guild.EventLogRecordsCount = 100
